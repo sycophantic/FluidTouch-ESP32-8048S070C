@@ -113,9 +113,9 @@ jobs:
         cp /tmp/firmware-artifacts/web/manifest_basic.json firmware/preview/${VERSION_ID}/manifest_basic.json
         cp /tmp/firmware-artifacts/web/manifest_advance.json firmware/preview/${VERSION_ID}/manifest_advance-v1.3.json
         
-        # Update manifest paths
-        sed -i "s|./firmware/basic/|./firmware/preview/${VERSION_ID}/basic/|g" firmware/preview/${VERSION_ID}/manifest_basic.json
-        sed -i "s|./firmware/advance/|./firmware/preview/${VERSION_ID}/advance-v1.3/|g" firmware/preview/${VERSION_ID}/manifest_advance-v1.3.json
+        # Update manifest paths (relative to manifest file location)
+        sed -i "s|./firmware/basic/|./basic/|g" firmware/preview/${VERSION_ID}/manifest_basic.json
+        sed -i "s|./firmware/advance/|./advance-v1.3/|g" firmware/preview/${VERSION_ID}/manifest_advance-v1.3.json
         
         # Update version in manifests to include preview tag
         sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION_ID\"/" firmware/preview/${VERSION_ID}/manifest_basic.json
