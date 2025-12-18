@@ -140,18 +140,8 @@ jobs:
           .versions = (.versions | map(select(.id != $ver))) |
           .versions = ([{
             "id": $ver,
-            "display": ($ver + " (Preview)"),
-            "type": "preview",
-            "branch": $branch,
-            "date": $ts,
-            "hardware_variants": {
-              "basic": {
-                "manifest": ("./firmware/preview/" + $suffix + "/manifest_basic.json")
-              },
-              "advance-v1.3": {
-                "manifest": ("./firmware/preview/" + $suffix + "/manifest_advance.json")
-              }
-            }
+            "hardware": ["basic", "advance-v1.3"],
+            "is_preview": true
           }] + .versions)
         ' versions.json > versions.json.tmp && mv versions.json.tmp versions.json
         
