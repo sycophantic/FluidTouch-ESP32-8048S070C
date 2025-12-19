@@ -36,6 +36,17 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install platformio
+    
+    - name: Extract version from tag
+      id: version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        
+    - name: Update version in config.h
+      run: |
+        VERSION="${{ steps.version.outputs.VERSION }}"
+        sed -i "s/#define FLUIDTOUCH_VERSION \".*\"/#define FLUIDTOUCH_VERSION \"${VERSION}\"/" include/config.h
+        echo "Updated config.h with version: ${VERSION}"
+        grep FLUIDTOUCH_VERSION include/config.h
         
     - name: Build firmware (Basic)
       run: platformio run --environment elecrow-crowpanel-7-basic
@@ -64,10 +75,6 @@ jobs:
           cp ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin web/firmware/basic/
           cp ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin web/firmware/advance/
         fi
-        
-    - name: Extract version from tag
-      id: version
-      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
       
     - name: Update manifest files with version
       run: |
@@ -141,7 +148,7 @@ jobs:
       
     - name: Extract version from tag
       id: version
-      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
       
     - name: Download firmware artifacts
       uses: actions/download-artifact@v4
@@ -196,17 +203,8 @@ jobs:
         jq --arg ver "$VERSION" --arg ts "$TIMESTAMP" '
           .versions = ([{
             "id": $ver,
-            "display": $ver,
-            "type": "stable",
-            "date": $ts,
-            "hardware_variants": {
-              "basic": {
-                "manifest": ("./firmware/" + $ver + "/manifest_basic.json")
-              },
-              "advance-v1.3": {
-                "manifest": ("./firmware/" + $ver + "/manifest_advance.json")
-              }
-            }
+            "hardware": ["basic", "advance-v1.3"],
+            "is_preview": false
           }] + .versions) |
           .default_version = $ver
         ' versions.json > versions.json.tmp && mv versions.json.tmp versions.json
