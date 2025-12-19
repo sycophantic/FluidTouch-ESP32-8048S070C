@@ -3,8 +3,10 @@ name: Build Branch Preview
 on:
   push:
     branches:
+      - 'feature/**'
       - 'feat/**'
       - 'fix/**'
+      - 'bugfix/**'
       - 'dev'
   workflow_dispatch:
 
