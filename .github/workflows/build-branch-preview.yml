@@ -81,6 +81,11 @@ jobs:
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
+        
+        # Clean up build artifacts before switching branches
+        rm -rf .pio build .vscode .git/index
+        git reset --hard
+        
         git fetch origin gh-pages 2>/dev/null || true
         if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
           git checkout gh-pages
