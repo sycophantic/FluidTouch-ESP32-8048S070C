@@ -18,26 +18,33 @@ public:
     static void updateModalStates(const char *wcs, const char *plane, const char *dist, 
                                   const char *units, const char *motion, const char *feedrate,
                                   const char *spindle, const char *coolant, const char *tool);
-    static void updateFileProgress(bool is_printing, float percent, const char *filename, 
-                                   uint32_t elapsed_ms);
+    static void updateControlButtons(int machine_state);
     
 private:
     static lv_obj_t *lbl_message;
     static lv_obj_t *lbl_state;
-    static lv_obj_t *lbl_file_progress_container;  // Container for file progress section
-    static lv_obj_t *lbl_filename;
-    static lv_obj_t *bar_progress;
-    static lv_obj_t *lbl_percent;
-    static lv_obj_t *lbl_elapsed_time;
-    static lv_obj_t *lbl_elapsed_unit;
-    static lv_obj_t *lbl_estimated_time;
-    static lv_obj_t *lbl_estimated_unit;
+    
+    // Control buttons (in place of job progress)
+    static lv_obj_t *btn_pause;
+    static lv_obj_t *lbl_pause;
+    static lv_obj_t *btn_stop;
+    static lv_obj_t *btn_cancel_jog;
     static lv_obj_t *lbl_wpos_x;
     static lv_obj_t *lbl_wpos_y;
     static lv_obj_t *lbl_wpos_z;
     static lv_obj_t *lbl_mpos_x;
     static lv_obj_t *lbl_mpos_y;
     static lv_obj_t *lbl_mpos_z;
+    
+    // Keyboards for position editing
+    static lv_obj_t *keyboard;
+    static lv_obj_t *active_textarea;  // Which position field is being edited
+    static char original_value[32];    // Store original value for cancel restoration
+    
+    // Event handlers for position editing
+    static void position_field_event_handler(lv_event_t *e);
+    static void keyboard_event_handler(lv_event_t *e);
+    static void showValidationError(const char* message);
     static lv_obj_t *lbl_feed_value;
     static lv_obj_t *lbl_feed_override;
     static lv_obj_t *lbl_feed_units;
@@ -73,10 +80,11 @@ private:
     static char last_modal_spindle[8];
     static char last_modal_coolant[8];
     static char last_modal_tool[8];
-    static bool last_is_printing;
-    static float last_file_percent;
-    static char last_filename[64];
-    static uint32_t last_elapsed_seconds;
+    
+    // Event handlers for control buttons
+    static void onPauseResumeClicked(lv_event_t *e);
+    static void onStopClicked(lv_event_t *e);
+    static void onCancelJogClicked(lv_event_t *e);
 };
 
 #endif // UI_TAB_STATUS_H
