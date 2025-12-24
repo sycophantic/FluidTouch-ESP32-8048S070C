@@ -54,7 +54,8 @@ private:
     static lv_obj_t *lbl_spindle_units;
     
     // Modal state labels
-    static lv_obj_t *lbl_modal_wcs;
+    static lv_obj_t *btn_modal_wcs;  // Changed from lbl_modal_wcs to button
+    static lv_obj_t *lbl_modal_wcs_value;  // Label inside the button
     static lv_obj_t *lbl_modal_plane;
     static lv_obj_t *lbl_modal_dist;
     static lv_obj_t *lbl_modal_units;
@@ -81,10 +82,29 @@ private:
     static char last_modal_coolant[8];
     static char last_modal_tool[8];
     
+    // WCS selection popup
+    static lv_obj_t *wcs_popup;
+    static lv_obj_t *wcs_popup_content;
+    static lv_obj_t *wcs_btn_set;
+    static lv_obj_t *wcs_btn_cancel;
+    static lv_obj_t *wcs_buttons[6];  // Store WCS button references for highlighting
+    static int selected_wcs_index;  // Track which WCS is selected (-1 = none)
+    static int current_wcs_index;  // Track which WCS is currently active (-1 = none)
+    static char wcs_offsets[10][64];  // Store parsed WCS offsets (G54-G59, G28, G30, G92, TLO)
+    
     // Event handlers for control buttons
     static void onPauseResumeClicked(lv_event_t *e);
     static void onStopClicked(lv_event_t *e);
     static void onCancelJogClicked(lv_event_t *e);
+    
+    // WCS selection event handlers
+    static void onWCSButtonClicked(lv_event_t *e);
+    static void onWCSSelected(lv_event_t *e);
+    static void onWCSSetClicked(lv_event_t *e);
+    static void onWCSCancelClicked(lv_event_t *e);
+    static void showWCSPopup();
+    static void hideWCSPopup();
+    static void parseWCSOffsetsResponse(const char* response);
 };
 
 #endif // UI_TAB_STATUS_H

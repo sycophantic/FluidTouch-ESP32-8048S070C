@@ -29,7 +29,8 @@ lv_obj_t *UITabStatus::lbl_rapid_override = nullptr;
 lv_obj_t *UITabStatus::lbl_spindle_value = nullptr;
 lv_obj_t *UITabStatus::lbl_spindle_override = nullptr;
 lv_obj_t *UITabStatus::lbl_spindle_units = nullptr;
-lv_obj_t *UITabStatus::lbl_modal_wcs = nullptr;
+lv_obj_t *UITabStatus::btn_modal_wcs = nullptr;
+lv_obj_t *UITabStatus::lbl_modal_wcs_value = nullptr;
 lv_obj_t *UITabStatus::lbl_modal_plane = nullptr;
 lv_obj_t *UITabStatus::lbl_modal_dist = nullptr;
 lv_obj_t *UITabStatus::lbl_modal_units = nullptr;
@@ -61,6 +62,16 @@ char UITabStatus::last_modal_feedrate[8] = "";
 char UITabStatus::last_modal_spindle[8] = "";
 char UITabStatus::last_modal_coolant[8] = "";
 char UITabStatus::last_modal_tool[8] = "";
+
+// WCS popup static members
+lv_obj_t *UITabStatus::wcs_popup = nullptr;
+lv_obj_t *UITabStatus::wcs_popup_content = nullptr;
+lv_obj_t *UITabStatus::wcs_btn_set = nullptr;
+lv_obj_t *UITabStatus::wcs_btn_cancel = nullptr;
+lv_obj_t *UITabStatus::wcs_buttons[6] = {nullptr};  // Store button references
+int UITabStatus::selected_wcs_index = -1;  // -1 = none selected
+int UITabStatus::current_wcs_index = -1;  // -1 = none is current
+char UITabStatus::wcs_offsets[10][64] = {{0}};  // G54-G59, G28, G30, G92, TLO
 
 void UITabStatus::create(lv_obj_t *tab) {
     // Set 5px margins by using padding
@@ -125,6 +136,26 @@ void UITabStatus::create(lv_obj_t *tab) {
     lv_obj_set_pos(line1, 0, 60);
     lv_obj_set_style_bg_color(line1, UITheme::BG_BUTTON, 0);
     lv_obj_set_style_border_width(line1, 0, 0);
+
+    // WCS BUTTON - Top right corner
+    lv_obj_t *wcs_header = lv_label_create(tab);
+    lv_label_set_text(wcs_header, "WCS");
+    lv_obj_set_style_text_font(wcs_header, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(wcs_header, UITheme::TEXT_DISABLED, 0);
+    lv_obj_set_pos(wcs_header, 615, 0);
+    
+    btn_modal_wcs = lv_button_create(tab);
+    lv_obj_set_size(btn_modal_wcs, 115, 50);
+    lv_obj_set_pos(btn_modal_wcs, 665, 0);
+    lv_obj_set_style_bg_color(btn_modal_wcs, UITheme::BG_BLACK, LV_PART_MAIN);
+    
+    lbl_modal_wcs_value = lv_label_create(btn_modal_wcs);
+    lv_label_set_text(lbl_modal_wcs_value, "---");
+    lv_obj_set_style_text_font(lbl_modal_wcs_value, &lv_font_montserrat_32, 0);
+    lv_obj_set_style_text_color(lbl_modal_wcs_value, UITheme::POS_MODAL, 0);
+    lv_obj_center(lbl_modal_wcs_value);
+    
+    lv_obj_add_event_cb(btn_modal_wcs, onWCSButtonClicked, LV_EVENT_CLICKED, nullptr);
 
     // WORK POSITION - Left column
     lv_obj_t *wpos_header = lv_label_create(tab);
@@ -311,122 +342,129 @@ void UITabStatus::create(lv_obj_t *tab) {
     lv_obj_set_style_text_color(modal_header, UITheme::TEXT_DISABLED, 0);
     lv_obj_set_pos(modal_header, 615, 70);
 
-    // WCS
-    lv_obj_t *status_coord_label = lv_label_create(tab);
-    lv_label_set_text(status_coord_label, "WCS");
-    lv_obj_set_style_text_font(status_coord_label, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(status_coord_label, UITheme::ACCENT_SECONDARY, 0);
-    lv_obj_set_pos(status_coord_label, 615, 99);
-    
-    lbl_modal_wcs = lv_label_create(tab);
-    lv_label_set_text(lbl_modal_wcs, "---");
-    lv_obj_set_style_text_font(lbl_modal_wcs, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(lbl_modal_wcs, UITheme::POS_MODAL, 0);
-    lv_obj_set_pos(lbl_modal_wcs, 735, 99);
 
+    int modalStart = 99;
+    int modalSpacing = 31;
+    int modalPosition = 0;
     // PLANE
     lv_obj_t *status_plane_label = lv_label_create(tab);
     lv_label_set_text(status_plane_label, "PLANE");
     lv_obj_set_style_text_font(status_plane_label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(status_plane_label, UITheme::ACCENT_SECONDARY, 0);
-    lv_obj_set_pos(status_plane_label, 615, 126);
+    lv_obj_set_pos(status_plane_label, 615, modalStart + (modalSpacing * modalPosition));
     
     lbl_modal_plane = lv_label_create(tab);
     lv_label_set_text(lbl_modal_plane, "---");
     lv_obj_set_style_text_font(lbl_modal_plane, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(lbl_modal_plane, UITheme::UI_SECONDARY, 0);
-    lv_obj_set_pos(lbl_modal_plane, 735, 126);
+    lv_obj_set_pos(lbl_modal_plane, 735, modalStart + (modalSpacing * modalPosition));
+
+    modalPosition++;
 
     // DIST
     lv_obj_t *status_dist_label = lv_label_create(tab);
     lv_label_set_text(status_dist_label, "DIST");
     lv_obj_set_style_text_font(status_dist_label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(status_dist_label, UITheme::ACCENT_SECONDARY, 0);
-    lv_obj_set_pos(status_dist_label, 615, 153);
+    lv_obj_set_pos(status_dist_label, 615, modalStart + (modalSpacing * modalPosition));
     
     lbl_modal_dist = lv_label_create(tab);
     lv_label_set_text(lbl_modal_dist, "---");
     lv_obj_set_style_text_font(lbl_modal_dist, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(lbl_modal_dist, UITheme::UI_SECONDARY, 0);
-    lv_obj_set_pos(lbl_modal_dist, 735, 153);
+    lv_obj_set_pos(lbl_modal_dist, 735, modalStart + (modalSpacing * modalPosition));
+
+    modalPosition++;
 
     // UNITS
     lv_obj_t *status_units_label = lv_label_create(tab);
     lv_label_set_text(status_units_label, "UNITS");
     lv_obj_set_style_text_font(status_units_label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(status_units_label, UITheme::ACCENT_SECONDARY, 0);
-    lv_obj_set_pos(status_units_label, 615, 180);
+    lv_obj_set_pos(status_units_label, 615, modalStart + (modalSpacing * modalPosition));
     
     lbl_modal_units = lv_label_create(tab);
     lv_label_set_text(lbl_modal_units, "---");
     lv_obj_set_style_text_font(lbl_modal_units, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(lbl_modal_units, UITheme::POS_WORK, 0);
-    lv_obj_set_pos(lbl_modal_units, 735, 180);
+    lv_obj_set_pos(lbl_modal_units, 735, modalStart + (modalSpacing * modalPosition));
+
+    modalPosition++;
 
     // MOTION
     lv_obj_t *status_motion_label = lv_label_create(tab);
     lv_label_set_text(status_motion_label, "MOTION");
     lv_obj_set_style_text_font(status_motion_label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(status_motion_label, UITheme::ACCENT_SECONDARY, 0);
-    lv_obj_set_pos(status_motion_label, 615, 207);
+    lv_obj_set_pos(status_motion_label, 615, modalStart + (modalSpacing * modalPosition));
     
     lbl_modal_motion = lv_label_create(tab);
     lv_label_set_text(lbl_modal_motion, "---");
     lv_obj_set_style_text_font(lbl_modal_motion, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(lbl_modal_motion, UITheme::UI_INFO, 0);
-    lv_obj_set_pos(lbl_modal_motion, 735, 207);
+    lv_obj_set_pos(lbl_modal_motion, 735, modalStart + (modalSpacing * modalPosition));
+
+    modalPosition++;
 
     // FEED
     lv_obj_t *status_feedrate_label = lv_label_create(tab);
     lv_label_set_text(status_feedrate_label, "FEED");
     lv_obj_set_style_text_font(status_feedrate_label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(status_feedrate_label, UITheme::ACCENT_SECONDARY, 0);
-    lv_obj_set_pos(status_feedrate_label, 615, 234);
+    lv_obj_set_pos(status_feedrate_label, 615, modalStart + (modalSpacing * modalPosition));
     
     lbl_modal_feedrate = lv_label_create(tab);
     lv_label_set_text(lbl_modal_feedrate, "---");
     lv_obj_set_style_text_font(lbl_modal_feedrate, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(lbl_modal_feedrate, UITheme::UI_INFO, 0);
-    lv_obj_set_pos(lbl_modal_feedrate, 735, 234);
+    lv_obj_set_pos(lbl_modal_feedrate, 735, modalStart + (modalSpacing * modalPosition));
+
+    modalPosition++;
 
     // SPINDLE
     lv_obj_t *status_spindle_label = lv_label_create(tab);
     lv_label_set_text(status_spindle_label, "SPINDLE");
     lv_obj_set_style_text_font(status_spindle_label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(status_spindle_label, UITheme::ACCENT_SECONDARY, 0);
-    lv_obj_set_pos(status_spindle_label, 615, 261);
+    lv_obj_set_pos(status_spindle_label, 615, modalStart + (modalSpacing * modalPosition));
     
     lbl_modal_spindle = lv_label_create(tab);
     lv_label_set_text(lbl_modal_spindle, "---");
     lv_obj_set_style_text_font(lbl_modal_spindle, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(lbl_modal_spindle, UITheme::UI_INFO, 0);
-    lv_obj_set_pos(lbl_modal_spindle, 735, 261);
+    lv_obj_set_pos(lbl_modal_spindle, 735, modalStart + (modalSpacing * modalPosition));
+
+    modalPosition++;
 
     // COOLANT
     lv_obj_t *status_coolant_label = lv_label_create(tab);
     lv_label_set_text(status_coolant_label, "COOLANT");
     lv_obj_set_style_text_font(status_coolant_label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(status_coolant_label, UITheme::ACCENT_SECONDARY, 0);
-    lv_obj_set_pos(status_coolant_label, 615, 288);
+    lv_obj_set_pos(status_coolant_label, 615, modalStart + (modalSpacing * modalPosition));
     
     lbl_modal_coolant = lv_label_create(tab);
     lv_label_set_text(lbl_modal_coolant, "---");
     lv_obj_set_style_text_font(lbl_modal_coolant, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(lbl_modal_coolant, UITheme::UI_INFO, 0);
-    lv_obj_set_pos(lbl_modal_coolant, 735, 288);
+    lv_obj_set_pos(lbl_modal_coolant, 735, modalStart + (modalSpacing * modalPosition));
+
+    modalPosition++;
 
     // TOOL
     lv_obj_t *status_tool_label = lv_label_create(tab);
     lv_label_set_text(status_tool_label, "TOOL");
     lv_obj_set_style_text_font(status_tool_label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(status_tool_label, UITheme::ACCENT_SECONDARY, 0);
-    lv_obj_set_pos(status_tool_label, 615, 315);
+    lv_obj_set_pos(status_tool_label, 615, modalStart + (modalSpacing * modalPosition));
     
     lbl_modal_tool = lv_label_create(tab);
     lv_label_set_text(lbl_modal_tool, "---");
     lv_obj_set_style_text_font(lbl_modal_tool, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(lbl_modal_tool, UITheme::UI_WARNING, 0);
-    lv_obj_set_pos(lbl_modal_tool, 735, 315);
+    lv_obj_set_pos(lbl_modal_tool, 735, modalStart + (modalSpacing * modalPosition));
+
+    // 315
 
     // FEED RATE & SPINDLE - Third column (moved 20px left: 475→455)
     lv_obj_t *status_feed_header = lv_label_create(tab);
@@ -710,8 +748,8 @@ void UITabStatus::updateSpindle(float speed, float override_pct) {
 void UITabStatus::updateModalStates(const char *wcs, const char *plane, const char *dist, 
                                     const char *units, const char *motion, const char *feedrate,
                                     const char *spindle, const char *coolant, const char *tool) {
-    if (lbl_modal_wcs && strcmp(wcs, last_modal_wcs) != 0) {
-        lv_label_set_text(lbl_modal_wcs, wcs);
+    if (lbl_modal_wcs_value && strcmp(wcs, last_modal_wcs) != 0) {
+        lv_label_set_text(lbl_modal_wcs_value, wcs);
         strncpy(last_modal_wcs, wcs, sizeof(last_modal_wcs) - 1);
         last_modal_wcs[sizeof(last_modal_wcs) - 1] = '\0';
     }
@@ -1110,4 +1148,262 @@ void UITabStatus::keyboard_event_handler(lv_event_t *e) {
             active_textarea = nullptr;
         }
     }
+}
+
+// WCS Button Click Handler
+void UITabStatus::onWCSButtonClicked(lv_event_t *e) {
+    Serial.println("WCS button clicked, requesting coordinate offsets");
+    
+    // Set callback to capture the $# response
+    FluidNCClient::setMessageCallback([](const char* message) {
+        parseWCSOffsetsResponse(message);
+    });
+    
+    // Request coordinate offsets from FluidNC
+    // Popup will be shown automatically when G59 is parsed
+    FluidNCClient::sendCommand("$#\n");
+}
+
+// Parse WCS offsets response from $# command
+void UITabStatus::parseWCSOffsetsResponse(const char* response) {
+    // FluidNC sends each coordinate system as a separate message
+    // Example: [G54:90.000,0.000,0.000]
+    
+    // Map of WCS names to array indices
+    const char* wcs_names[] = {"G54", "G55", "G56", "G57", "G58", "G59", "G28", "G30", "G92", "TLO"};
+    
+    // Check if this message contains a WCS offset
+    if (response[0] != '[') return;
+    
+    // Find which WCS this is
+    for (int i = 0; i < 10; i++) {
+        char search[8];
+        snprintf(search, sizeof(search), "[%s:", wcs_names[i]);
+        
+        if (strncmp(response, search, strlen(search)) == 0) {
+            // Found matching WCS - extract coordinates
+            const char* start = response + strlen(search);
+            const char* end = strchr(start, ']');
+            
+            if (end) {
+                int len = end - start;
+                if (len < 64) {
+                    strncpy(wcs_offsets[i], start, len);
+                    wcs_offsets[i][len] = '\0';
+                    Serial.printf("Parsed %s: %s\n", wcs_names[i], wcs_offsets[i]);
+                    
+                    // Show popup after parsing G59 (last coordinate system we display)
+                    if (i == 5) {  // G59 is at index 5
+                        Serial.println("G59 parsed, showing WCS popup");
+                        showWCSPopup();
+                    }
+                }
+            }
+            break;
+        }
+    }
+}
+
+// Show WCS Selection Popup
+void UITabStatus::showWCSPopup() {
+    if (wcs_popup) {
+        lv_obj_del(wcs_popup);
+    }
+    
+    // Create modal backdrop
+    wcs_popup = lv_obj_create(lv_screen_active());
+    lv_obj_set_size(wcs_popup, 800, 480);
+    lv_obj_set_pos(wcs_popup, 0, 0);
+    lv_obj_set_style_bg_color(wcs_popup, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(wcs_popup, LV_OPA_70, 0);
+    lv_obj_set_style_border_width(wcs_popup, 0, 0);
+    lv_obj_clear_flag(wcs_popup, LV_OBJ_FLAG_SCROLLABLE);
+    
+    // Create content panel
+    wcs_popup_content = lv_obj_create(wcs_popup);
+    lv_obj_set_size(wcs_popup_content, 700, 400);
+    lv_obj_center(wcs_popup_content);
+    lv_obj_set_style_bg_color(wcs_popup_content, UITheme::BG_MEDIUM, 0);
+    lv_obj_set_style_border_color(wcs_popup_content, UITheme::ACCENT_SECONDARY, 0);
+    lv_obj_set_style_border_width(wcs_popup_content, 3, 0);
+    lv_obj_set_style_pad_all(wcs_popup_content, 15, 0);
+    lv_obj_clear_flag(wcs_popup_content, LV_OBJ_FLAG_SCROLLABLE);
+    
+    // Title
+    lv_obj_t *title = lv_label_create(wcs_popup_content);
+    lv_label_set_text(title, "SELECT WORK COORDINATE SYSTEM");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(title, UITheme::TEXT_DISABLED, 0);
+    lv_obj_set_pos(title, 0, 0);
+    
+    // Create WCS buttons in 2 columns (no scrolling)
+    const char* wcs_names[] = {"G54", "G55", "G56", "G57", "G58", "G59"};
+    current_wcs_index = -1;  // Reset current WCS tracking
+    
+    for (int i = 0; i < 6; i++) {
+        // Calculate position: column 0 (left) for G54-G56, column 1 (right) for G57-G59
+        int col = i / 3;  // 0 for indices 0-2, 1 for indices 3-5
+        int row = i % 3;  // Row within column (0, 1, 2)
+        int x = col * 335;  // Left column at x=0, right column at x=335
+        int y = 40 + (row * 85);  // Start at y=40, space buttons 85px apart
+        
+        lv_obj_t *btn = lv_button_create(wcs_popup_content);
+        lv_obj_set_size(btn, 325, 75);
+        lv_obj_set_pos(btn, x, y);
+        lv_obj_set_style_bg_color(btn, UITheme::BG_BUTTON, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(btn, 8, LV_PART_MAIN);
+        
+        // Check if this is the current WCS
+        bool is_current = (strcmp(wcs_names[i], lv_label_get_text(lbl_modal_wcs_value)) == 0);
+        if (is_current) {
+            current_wcs_index = i;  // Store which button is current
+            lv_obj_set_style_border_color(btn, UITheme::ACCENT_SECONDARY, LV_PART_MAIN);
+            lv_obj_set_style_border_width(btn, 2, LV_PART_MAIN);
+        }
+        
+        // WCS name label (large, yellow)
+        lv_obj_t *lbl_name = lv_label_create(btn);
+        lv_label_set_text(lbl_name, wcs_names[i]);
+        lv_obj_set_style_text_font(lbl_name, &lv_font_montserrat_24, 0);
+        lv_obj_set_style_text_color(lbl_name, UITheme::POS_MODAL, 0);
+        lv_obj_align(lbl_name, LV_ALIGN_TOP_LEFT, 0, 0);
+        
+        // Coordinates label with axis colors (axis labels AND values colored)
+        lv_obj_t *lbl_coords = lv_label_create(btn);
+        char text[120];
+        char* coords = wcs_offsets[i];
+        
+        // Parse the three coordinate values
+        float x_val = 0, y_val = 0, z_val = 0;
+        sscanf(coords, "%f,%f,%f", &x_val, &y_val, &z_val);
+        
+        // Format with axis color codes (LVGL recolor feature)
+        // Extract RGB components from theme colors (convert from RGB565 to RGB888)
+        uint32_t x_color = lv_color_to_u32(UITheme::AXIS_X);
+        uint32_t y_color = lv_color_to_u32(UITheme::AXIS_Y);
+        uint32_t z_color = lv_color_to_u32(UITheme::AXIS_Z);
+        
+        snprintf(text, sizeof(text), 
+                 "#%06X X: %.3f#  #%06X Y: %.3f#  #%06X Z: %.3f#",
+                 x_color & 0xFFFFFF, x_val,
+                 y_color & 0xFFFFFF, y_val,
+                 z_color & 0xFFFFFF, z_val);
+        
+        lv_label_set_text(lbl_coords, text);
+        lv_obj_set_style_text_font(lbl_coords, &lv_font_montserrat_16, 0);
+        lv_label_set_recolor(lbl_coords, true);
+        lv_obj_align(lbl_coords, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+        
+        // Store button reference for highlighting
+        wcs_buttons[i] = btn;
+        
+        // Store WCS index in user data
+        lv_obj_set_user_data(btn, (void*)(intptr_t)i);
+        lv_obj_add_event_cb(btn, onWCSSelected, LV_EVENT_CLICKED, nullptr);
+    }
+    
+    // Set button (left side)
+    wcs_btn_set = lv_button_create(wcs_popup_content);
+    lv_obj_set_size(wcs_btn_set, 150, 50);
+    lv_obj_set_pos(wcs_btn_set, 175, 305);
+    lv_obj_set_style_bg_color(wcs_btn_set, UITheme::BTN_PLAY, LV_PART_MAIN);
+    lv_obj_add_flag(wcs_btn_set, LV_OBJ_FLAG_HIDDEN);  // Hidden until WCS selected
+    
+    lv_obj_t *lbl_set = lv_label_create(wcs_btn_set);
+    lv_label_set_text(lbl_set, "Set");
+    lv_obj_set_style_text_font(lbl_set, &lv_font_montserrat_18, 0);
+    lv_obj_center(lbl_set);
+    
+    lv_obj_add_event_cb(wcs_btn_set, onWCSSetClicked, LV_EVENT_CLICKED, nullptr);
+    
+    // Cancel button (right side)
+    wcs_btn_cancel = lv_button_create(wcs_popup_content);
+    lv_obj_set_size(wcs_btn_cancel, 150, 50);
+    lv_obj_set_pos(wcs_btn_cancel, 375, 305);
+    lv_obj_set_style_bg_color(wcs_btn_cancel, UITheme::BG_BUTTON, LV_PART_MAIN);
+    
+    lv_obj_t *lbl_cancel = lv_label_create(wcs_btn_cancel);
+    lv_label_set_text(lbl_cancel, "Cancel");
+    lv_obj_set_style_text_font(lbl_cancel, &lv_font_montserrat_18, 0);
+    lv_obj_center(lbl_cancel);
+    
+    lv_obj_add_event_cb(wcs_btn_cancel, onWCSCancelClicked, LV_EVENT_CLICKED, nullptr);
+    
+    // Initialize selection state
+    selected_wcs_index = -1;
+}
+
+// Hide WCS Popup
+void UITabStatus::hideWCSPopup() {
+    if (wcs_popup) {
+        lv_obj_del(wcs_popup);
+        wcs_popup = nullptr;
+        wcs_popup_content = nullptr;
+        wcs_btn_set = nullptr;
+        wcs_btn_cancel = nullptr;
+        for (int i = 0; i < 6; i++) {
+            wcs_buttons[i] = nullptr;
+        }
+        selected_wcs_index = -1;
+        current_wcs_index = -1;
+    }
+    
+    // Clear message callback
+    FluidNCClient::clearMessageCallback();
+}
+
+// WCS Selected Handler (highlights selection, doesn't execute)
+void UITabStatus::onWCSSelected(lv_event_t *e) {
+    lv_obj_t *btn = (lv_obj_t*)lv_event_get_target(e);
+    int index = (int)(intptr_t)lv_obj_get_user_data(btn);
+    
+    Serial.printf("WCS button clicked: index %d\n", index);
+    
+    // Clear previous selection highlighting
+    if (selected_wcs_index >= 0 && selected_wcs_index < 6) {
+        // If previous selection was the current WCS, restore its 2px teal border
+        if (selected_wcs_index == current_wcs_index) {
+            lv_obj_set_style_border_color(wcs_buttons[selected_wcs_index], UITheme::ACCENT_SECONDARY, LV_PART_MAIN);
+            lv_obj_set_style_border_width(wcs_buttons[selected_wcs_index], 2, LV_PART_MAIN);
+        } else {
+            // Otherwise, remove border completely
+            lv_obj_set_style_border_width(wcs_buttons[selected_wcs_index], 0, LV_PART_MAIN);
+        }
+    }
+    
+    // Highlight new selection
+    selected_wcs_index = index;
+    lv_obj_set_style_border_color(btn, UITheme::ACCENT_PRIMARY, LV_PART_MAIN);
+    lv_obj_set_style_border_width(btn, 3, LV_PART_MAIN);
+    
+    // Show Set button
+    if (wcs_btn_set) {
+        lv_obj_clear_flag(wcs_btn_set, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+// WCS Set Button Handler (executes the command)
+void UITabStatus::onWCSSetClicked(lv_event_t *e) {
+    if (selected_wcs_index < 0 || selected_wcs_index >= 6) {
+        Serial.println("No WCS selected");
+        return;
+    }
+    
+    const char* wcs_names[] = {"G54", "G55", "G56", "G57", "G58", "G59"};
+    const char* wcs = wcs_names[selected_wcs_index];
+    
+    Serial.printf("Setting WCS to: %s\n", wcs);
+    
+    // Send command to FluidNC to switch WCS
+    char command[8];
+    snprintf(command, sizeof(command), "%s\n", wcs);
+    FluidNCClient::sendCommand(command);
+    
+    // Close popup
+    hideWCSPopup();
+}
+
+// WCS Cancel Button Handler
+void UITabStatus::onWCSCancelClicked(lv_event_t *e) {
+    hideWCSPopup();
 }
