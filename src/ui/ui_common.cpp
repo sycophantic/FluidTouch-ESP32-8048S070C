@@ -69,6 +69,12 @@ static bool last_machine_connected = false;  // Cached connection status
 static bool last_wifi_connected = false;     // Cached WiFi status
 static bool last_auto_reporting = false;     // Cached auto-reporting status
 
+// File progress cached values for delta checking
+static char last_filename[128] = "";
+static float last_percent = -1.0f;
+static uint32_t last_elapsed_sec = 0xFFFFFFFF;  // Use seconds for comparison
+static uint32_t last_estimated_sec = 0xFFFFFFFF;
+
 // Connection timeout tracking
 static uint32_t connection_timeout_start = 0;
 static bool connection_timeout_active = false;
@@ -1380,54 +1386,65 @@ void UICommon::updateFileProgress(bool is_printing, float percent, const char *f
         if (lbl_mpos_y) lv_obj_add_flag(lbl_mpos_y, LV_OBJ_FLAG_HIDDEN);
         if (lbl_mpos_z) lv_obj_add_flag(lbl_mpos_z, LV_OBJ_FLAG_HIDDEN);
         
-        // Update filename
-        if (lbl_filename && filename) {
+        // Update filename (delta check)
+        if (lbl_filename && filename && strcmp(filename, last_filename) != 0) {
             lv_label_set_text(lbl_filename, filename);
+            strncpy(last_filename, filename, sizeof(last_filename) - 1);
+            last_filename[sizeof(last_filename) - 1] = '\0';
         }
         
-        // Update progress bar and percentage
-        if (bar_progress) {
-            lv_bar_set_value(bar_progress, (int)percent, LV_ANIM_OFF);
-        }
-        if (lbl_percent) {
-            char percent_text[8];
-            snprintf(percent_text, sizeof(percent_text), "%.1f%%", percent);
-            lv_label_set_text(lbl_percent, percent_text);
-        }
-        
-        // Update elapsed time
-        if (lbl_elapsed_time) {
-            uint32_t elapsed_sec = elapsed_ms / 1000;
-            uint32_t hours = elapsed_sec / 3600;
-            uint32_t minutes = (elapsed_sec % 3600) / 60;
-            
-            char time_text[16];
-            if (hours > 0) {
-                snprintf(time_text, sizeof(time_text), "%d:%02d", hours, minutes);
-                if (lbl_elapsed_unit) lv_label_set_text(lbl_elapsed_unit, "hr:min");
-            } else {
-                snprintf(time_text, sizeof(time_text), "%d:%02d", minutes, (int)(elapsed_sec % 60));
-                if (lbl_elapsed_unit) lv_label_set_text(lbl_elapsed_unit, "min:sec");
+        // Update progress bar and percentage (delta check with 0.1% tolerance)
+        if (fabsf(percent - last_percent) >= 0.1f) {
+            if (bar_progress) {
+                lv_bar_set_value(bar_progress, (int)percent, LV_ANIM_OFF);
             }
-            lv_label_set_text(lbl_elapsed_time, time_text);
+            if (lbl_percent) {
+                char percent_text[8];
+                snprintf(percent_text, sizeof(percent_text), "%.1f%%", percent);
+                lv_label_set_text(lbl_percent, percent_text);
+            }
+            last_percent = percent;
         }
         
-        // Calculate and update estimated time
+        // Update elapsed time (delta check - only update if changed by 1+ second)
+        uint32_t elapsed_sec = elapsed_ms / 1000;
+        if (elapsed_sec != last_elapsed_sec) {
+            if (lbl_elapsed_time) {
+                uint32_t hours = elapsed_sec / 3600;
+                uint32_t minutes = (elapsed_sec % 3600) / 60;
+                
+                char time_text[16];
+                if (hours > 0) {
+                    snprintf(time_text, sizeof(time_text), "%d:%02d", hours, minutes);
+                    if (lbl_elapsed_unit) lv_label_set_text(lbl_elapsed_unit, "hr:min");
+                } else {
+                    snprintf(time_text, sizeof(time_text), "%d:%02d", minutes, (int)(elapsed_sec % 60));
+                    if (lbl_elapsed_unit) lv_label_set_text(lbl_elapsed_unit, "min:sec");
+                }
+                lv_label_set_text(lbl_elapsed_time, time_text);
+            }
+            last_elapsed_sec = elapsed_sec;
+        }
+        
+        // Calculate and update estimated time (delta check - only update if changed by 1+ second)
         if (lbl_estimated_time && percent > 0.1f) {
-            uint32_t elapsed_sec = elapsed_ms / 1000;
             uint32_t estimated_total_sec = (uint32_t)((elapsed_sec / percent) * 100.0f);
-            uint32_t est_hours = estimated_total_sec / 3600;
-            uint32_t est_minutes = (estimated_total_sec % 3600) / 60;
             
-            char est_text[20];
-            if (est_hours > 0) {
-                snprintf(est_text, sizeof(est_text), "%d:%02d", est_hours, est_minutes);
-                if (lbl_estimated_unit) lv_label_set_text(lbl_estimated_unit, "hr:min");
-            } else {
-                snprintf(est_text, sizeof(est_text), "%d:%02d", est_minutes, (int)(estimated_total_sec % 60));
-                if (lbl_estimated_unit) lv_label_set_text(lbl_estimated_unit, "min:sec");
+            if (estimated_total_sec != last_estimated_sec) {
+                uint32_t est_hours = estimated_total_sec / 3600;
+                uint32_t est_minutes = (estimated_total_sec % 3600) / 60;
+                
+                char est_text[20];
+                if (est_hours > 0) {
+                    snprintf(est_text, sizeof(est_text), "%d:%02d", est_hours, est_minutes);
+                    if (lbl_estimated_unit) lv_label_set_text(lbl_estimated_unit, "hr:min");
+                } else {
+                    snprintf(est_text, sizeof(est_text), "%d:%02d", est_minutes, (int)(estimated_total_sec % 60));
+                    if (lbl_estimated_unit) lv_label_set_text(lbl_estimated_unit, "min:sec");
+                }
+                lv_label_set_text(lbl_estimated_time, est_text);
+                last_estimated_sec = estimated_total_sec;
             }
-            lv_label_set_text(lbl_estimated_time, est_text);
         }
     } else {
         // Hide job progress, show normal status/position display
@@ -1441,5 +1458,11 @@ void UICommon::updateFileProgress(bool is_printing, float percent, const char *f
         if (lbl_mpos_x) lv_obj_clear_flag(lbl_mpos_x, LV_OBJ_FLAG_HIDDEN);
         if (lbl_mpos_y) lv_obj_clear_flag(lbl_mpos_y, LV_OBJ_FLAG_HIDDEN);
         if (lbl_mpos_z) lv_obj_clear_flag(lbl_mpos_z, LV_OBJ_FLAG_HIDDEN);
+        
+        // Reset cached values when not printing
+        last_filename[0] = '\0';
+        last_percent = -1.0f;
+        last_elapsed_sec = 0xFFFFFFFF;
+        last_estimated_sec = 0xFFFFFFFF;
     }
 }
