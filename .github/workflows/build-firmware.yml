@@ -220,6 +220,11 @@ jobs:
       run: |
         cp artifacts/firmware-*/index.html index.html
         
+    - name: Clean up artifacts before commit
+      run: |
+        # Remove artifacts directory - we only want the organized firmware/ structure
+        rm -rf artifacts
+        
     - name: Commit and push to gh-pages
       run: |
         VERSION="${{ steps.version.outputs.VERSION }}"
