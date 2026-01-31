@@ -55,21 +55,38 @@ bool FluidNCClient::connect(const MachineConfig &config) {
         
         // Try resolving with retries (mDNS can be slow to respond)
         bool resolved = false;
-        for (int attempt = 0; attempt < 3 && !resolved; attempt++) {
+        for (int attempt = 0; attempt < 5 && !resolved; attempt++) {
             if (attempt > 0) {
-                Serial.printf("[FluidNC] Retry attempt %d/3...\n", attempt + 1);
-                delay(500);  // Brief delay between retries
+                Serial.printf("[FluidNC] Retry attempt %d/5...\n", attempt + 1);
+                delay(1000);  // Longer delay between retries for mDNS
             }
-            resolved = WiFi.hostByName(resolvedHost.c_str(), serverIP);
+            
+            if (resolvedHost.endsWith(".local")) {
+                // Use MDNS.queryHost() for .local hostnames (strip the .local suffix)
+                String hostname = resolvedHost.substring(0, resolvedHost.length() - 6);
+                Serial.printf("[FluidNC] Using mDNS query for: %s\n", hostname.c_str());
+                serverIP = MDNS.queryHost(hostname);
+            } else {
+                // Use standard DNS for non-.local hostnames
+                WiFi.hostByName(resolvedHost.c_str(), serverIP);
+            }
+            
+            // Validate that we got a real IP address (not 0.0.0.0)
+            if (serverIP != IPAddress(0, 0, 0, 0)) {
+                Serial.printf("[FluidNC] Resolved on attempt %d to IP: %s\n", attempt + 1, serverIP.toString().c_str());
+                resolved = true;
+            } else {
+                Serial.printf("[FluidNC] Attempt %d returned invalid IP (0.0.0.0)\n", attempt + 1);
+            }
         }
         
         if (!resolved) {
-            Serial.printf("[FluidNC] Failed to resolve hostname: %s\n", resolvedHost.c_str());
+            Serial.printf("[FluidNC] Failed to resolve hostname: %s after 5 attempts\n", resolvedHost.c_str());
             Serial.println("[FluidNC] Tip: Try using the IP address instead, or check that mDNS is working on your network");
             return false;
         }
         resolvedHost = serverIP.toString();
-        Serial.printf("[FluidNC] Resolved to IP: %s\n", resolvedHost.c_str());
+        Serial.printf("[FluidNC] Using resolved IP: %s\n", resolvedHost.c_str());
     }
     
     // Set up event callbacks

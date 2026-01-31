@@ -286,6 +286,7 @@ void UICommon::createMainUI() {
                 // Note: MDNS.begin() is required on ESP32 to enable mDNS client queries, not just advertising
                 if (MDNS.begin("fluidtouch")) {
                     Serial.println("mDNS client initialized - can now resolve .local hostnames");
+                    delay(1000);  // Give mDNS time to fully initialize before attempting queries
                 } else {
                     Serial.println("Warning: mDNS client failed to start (.local hostname resolution will not work)");
                 }
