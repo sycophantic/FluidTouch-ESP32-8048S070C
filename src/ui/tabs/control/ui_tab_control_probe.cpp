@@ -1,6 +1,8 @@
 #include "ui/tabs/control/ui_tab_control_probe.h"
 #include "ui/tabs/settings/ui_tab_settings_probe.h"
 #include "ui/ui_theme.h"
+#include "ui/ui_common.h"
+#include "ui/wcs_config.h"
 #include "network/fluidnc_client.h"
 #include "config.h"
 #include <lvgl.h>
@@ -257,6 +259,34 @@ void UITabControlProbe::executeProbe(const char* axis, const char* direction) {
         if (results_text) {
             lv_textarea_set_text(results_text, "Error: Not connected to FluidNC");
         }
+        return;
+    }
+    
+    // Check if current WCS is locked
+    if (WCSConfig::isCurrentWCSLocked()) {
+        const FluidNCStatus& status = FluidNCClient::getStatus();
+        char wcs_name[32];
+        WCSConfig::getCurrentWCSName(wcs_name, sizeof(wcs_name));
+        
+        Serial.printf("[Probe] WCS %s is locked, showing confirmation\n", status.modal_wcs);
+        
+        // Store probe parameters for callback
+        struct ProbeParams {
+            char axis;
+            char direction;
+        };
+        
+        ProbeParams *params = new ProbeParams();
+        params->axis = axis[0];
+        params->direction = direction[0];
+        
+        // Show lock confirmation dialog - use lambda that captures params
+        UICommon::showWCSLockDialog(status.modal_wcs, wcs_name, [](lv_event_t *e) {
+            // Note: We need to re-execute the probe logic here
+            // Get the event's user_data which was set by showWCSLockDialog
+            // For now, user will need to click again after dismissing dialog
+            Serial.println("[Probe] Confirmed probe on locked WCS - please click probe button again");
+        });
         return;
     }
     

@@ -52,6 +52,9 @@ __pycache__/
 .Python
 env/
 
+# Font generation cache
+scripts/fontawesome-cache/
+
 # Documentation images
 /docs/images/bmp/
 venv/

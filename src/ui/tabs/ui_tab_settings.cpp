@@ -4,6 +4,7 @@
 #include "ui/tabs/settings/ui_tab_settings_power.h"
 #include "ui/tabs/settings/ui_tab_settings_jog.h"
 #include "ui/tabs/settings/ui_tab_settings_probe.h"
+#include "ui/tabs/settings/ui_tab_settings_wcs.h"
 #include "ui/tabs/settings/ui_tab_settings_about.h"
 #include "ui/ui_theme.h"
 #include "config.h"
@@ -64,6 +65,7 @@ void UITabSettings::create(lv_obj_t *tab) {
     lv_obj_t *power_tab = lv_tabview_add_tab(sub_tabview, "Power");
     lv_obj_t *jog_tab = lv_tabview_add_tab(sub_tabview, "Jog");
     lv_obj_t *probe_tab = lv_tabview_add_tab(sub_tabview, "Probe");
+    lv_obj_t *wcs_tab = lv_tabview_add_tab(sub_tabview, "WCS");
     lv_obj_t *about_tab = lv_tabview_add_tab(sub_tabview, "About");
     
     // Disable scrolling on sub-tabs
@@ -72,6 +74,7 @@ void UITabSettings::create(lv_obj_t *tab) {
     lv_obj_clear_flag(power_tab, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(jog_tab, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(probe_tab, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(wcs_tab, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(about_tab, LV_OBJ_FLAG_SCROLLABLE);
     
     // Set background for sub-tabs
@@ -80,6 +83,7 @@ void UITabSettings::create(lv_obj_t *tab) {
     lv_obj_set_style_bg_color(power_tab, UITheme::BG_MEDIUM, 0);
     lv_obj_set_style_bg_color(jog_tab, UITheme::BG_MEDIUM, 0);
     lv_obj_set_style_bg_color(probe_tab, UITheme::BG_MEDIUM, 0);
+    lv_obj_set_style_bg_color(wcs_tab, UITheme::BG_MEDIUM, 0);
     lv_obj_set_style_bg_color(about_tab, UITheme::BG_MEDIUM, 0);
     
     // Add 5px padding to all sub-tabs
@@ -88,6 +92,7 @@ void UITabSettings::create(lv_obj_t *tab) {
     lv_obj_set_style_pad_all(power_tab, 5, 0);
     lv_obj_set_style_pad_all(jog_tab, 5, 0);
     lv_obj_set_style_pad_all(probe_tab, 5, 0);
+    lv_obj_set_style_pad_all(wcs_tab, 5, 0);
     lv_obj_set_style_pad_all(about_tab, 5, 0);
 
     // Get the actual tab buttons and style them directly with the teal accent color
@@ -111,12 +116,21 @@ void UITabSettings::create(lv_obj_t *tab) {
         }
     }
     
+    // Add tab change event handler to close keyboards when switching tabs
+    lv_obj_add_event_cb(sub_tabview, [](lv_event_t *e) {
+        // Close all keyboards when tab changes
+        UITabSettingsJog::hideKeyboard();
+        UITabSettingsProbe::hideKeyboard();
+        UITabSettingsWCS::hideKeyboard();
+    }, LV_EVENT_VALUE_CHANGED, nullptr);
+    
     // Delegate creation to subtab modules
     createGeneralTab(general_tab);
     createBackupTab(backup_tab);
     createPowerTab(power_tab);
     createJogTab(jog_tab);
     createProbeTab(probe_tab);
+    createWCSTab(wcs_tab);
     createAboutTab(about_tab);
 }
 
@@ -138,6 +152,10 @@ void UITabSettings::createJogTab(lv_obj_t *tab) {
 
 void UITabSettings::createProbeTab(lv_obj_t *tab) {
     UITabSettingsProbe::create(tab);
+}
+
+void UITabSettings::createWCSTab(lv_obj_t *tab) {
+    UITabSettingsWCS::create(tab);
 }
 
 void UITabSettings::createAboutTab(lv_obj_t *tab) {

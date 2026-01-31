@@ -2,6 +2,7 @@
 #include "ui/machine_config.h"
 #include "ui/upload_manager.h"
 #include "ui/tabs/ui_tab_macros.h"
+#include "ui/wcs_config.h"
 #include "config.h"
 #include "core/power_manager.h"
 #include <Preferences.h>
@@ -91,6 +92,19 @@ bool SettingsManager::exportSettings(const char* filepath) {
         }
         
         prefs.end();
+        
+        // WCS configuration (names and locks) for this machine
+        char wcs_names[6][32];
+        bool wcs_locks[6];
+        WCSConfig::loadWCSConfig(i, wcs_names, wcs_locks);
+        
+        JsonArray wcsArray = machine["wcs"].to<JsonArray>();
+        for (int w = 0; w < 6; w++) {
+            JsonObject wcs = wcsArray.add<JsonObject>();
+            wcs["code"] = WCSConfig::getWCSCode(w);
+            wcs["name"] = wcs_names[w];
+            wcs["locked"] = wcs_locks[w];
+        }
     }
     
     // === Export System Settings ===
@@ -254,6 +268,28 @@ bool SettingsManager::importSettings(const char* filepath) {
                 prefs.putBytes(key, macros, sizeof(macros));
                 
                 prefs.end();
+            }
+            
+            // WCS configuration
+            JsonArray wcsArray = machine["wcs"];
+            if (wcsArray.size() == 6) {
+                char wcs_names[6][32] = {{0}};
+                bool wcs_locks[6] = {false};
+                
+                int wcs_index = 0;
+                for (JsonObject wcs : wcsArray) {
+                    if (wcs_index >= 6) break;
+                    
+                    const char* wcs_name = wcs["name"] | "";
+                    strncpy(wcs_names[wcs_index], wcs_name, sizeof(wcs_names[wcs_index]) - 1);
+                    wcs_locks[wcs_index] = wcs["locked"] | false;
+                    
+                    wcs_index++;
+                }
+                
+                // Save WCS configuration for this machine
+                WCSConfig::saveWCSConfig(machine_index, wcs_names, wcs_locks);
+                Serial.printf("[SettingsManager] Imported WCS config for machine %d\n", machine_index);
             }
             
             machine_index++;

@@ -1,5 +1,7 @@
 #include "ui/tabs/control/ui_tab_control_actions.h"
 #include "ui/ui_theme.h"
+#include "ui/ui_common.h"
+#include "ui/wcs_config.h"
 #include "network/fluidnc_client.h"
 
 // Static member initialization
@@ -302,6 +304,22 @@ void UITabControlActions::onZeroXClicked(lv_event_t *e) {
         return;
     }
     
+    // Check if current WCS is locked
+    if (WCSConfig::isCurrentWCSLocked()) {
+        const FluidNCStatus& status = FluidNCClient::getStatus();
+        char wcs_name[32];
+        WCSConfig::getCurrentWCSName(wcs_name, sizeof(wcs_name));
+        
+        Serial.printf("[Actions] WCS %s is locked, showing confirmation\n", status.modal_wcs);
+        
+        // Show lock confirmation dialog
+        UICommon::showWCSLockDialog(status.modal_wcs, wcs_name, [](lv_event_t *e) {
+            Serial.println("[Actions] Confirmed Zero X on locked WCS");
+            FluidNCClient::sendCommand("G10 L20 P0 X0\n");
+        });
+        return;
+    }
+    
     Serial.println("[Actions] Sending Zero X command (G10 L20 P0 X0)");
     FluidNCClient::sendCommand("G10 L20 P0 X0\n");
 }
@@ -309,6 +327,22 @@ void UITabControlActions::onZeroXClicked(lv_event_t *e) {
 void UITabControlActions::onZeroYClicked(lv_event_t *e) {
     if (!FluidNCClient::isConnected()) {
         Serial.println("[Actions] Not connected to FluidNC");
+        return;
+    }
+    
+    // Check if current WCS is locked
+    if (WCSConfig::isCurrentWCSLocked()) {
+        const FluidNCStatus& status = FluidNCClient::getStatus();
+        char wcs_name[32];
+        WCSConfig::getCurrentWCSName(wcs_name, sizeof(wcs_name));
+        
+        Serial.printf("[Actions] WCS %s is locked, showing confirmation\n", status.modal_wcs);
+        
+        // Show lock confirmation dialog
+        UICommon::showWCSLockDialog(status.modal_wcs, wcs_name, [](lv_event_t *e) {
+            Serial.println("[Actions] Confirmed Zero Y on locked WCS");
+            FluidNCClient::sendCommand("G10 L20 P0 Y0\n");
+        });
         return;
     }
     
@@ -322,6 +356,22 @@ void UITabControlActions::onZeroZClicked(lv_event_t *e) {
         return;
     }
     
+    // Check if current WCS is locked
+    if (WCSConfig::isCurrentWCSLocked()) {
+        const FluidNCStatus& status = FluidNCClient::getStatus();
+        char wcs_name[32];
+        WCSConfig::getCurrentWCSName(wcs_name, sizeof(wcs_name));
+        
+        Serial.printf("[Actions] WCS %s is locked, showing confirmation\n", status.modal_wcs);
+        
+        // Show lock confirmation dialog
+        UICommon::showWCSLockDialog(status.modal_wcs, wcs_name, [](lv_event_t *e) {
+            Serial.println("[Actions] Confirmed Zero Z on locked WCS");
+            FluidNCClient::sendCommand("G10 L20 P0 Z0\n");
+        });
+        return;
+    }
+    
     Serial.println("[Actions] Sending Zero Z command (G10 L20 P0 Z0)");
     FluidNCClient::sendCommand("G10 L20 P0 Z0\n");
 }
@@ -329,6 +379,22 @@ void UITabControlActions::onZeroZClicked(lv_event_t *e) {
 void UITabControlActions::onZeroAllClicked(lv_event_t *e) {
     if (!FluidNCClient::isConnected()) {
         Serial.println("[Actions] Not connected to FluidNC");
+        return;
+    }
+    
+    // Check if current WCS is locked
+    if (WCSConfig::isCurrentWCSLocked()) {
+        const FluidNCStatus& status = FluidNCClient::getStatus();
+        char wcs_name[32];
+        WCSConfig::getCurrentWCSName(wcs_name, sizeof(wcs_name));
+        
+        Serial.printf("[Actions] WCS %s is locked, showing confirmation\n", status.modal_wcs);
+        
+        // Show lock confirmation dialog
+        UICommon::showWCSLockDialog(status.modal_wcs, wcs_name, [](lv_event_t *e) {
+            Serial.println("[Actions] Confirmed Zero All on locked WCS");
+            FluidNCClient::sendCommand("G10 L20 P0 X0 Y0 Z0\n");
+        });
         return;
     }
     

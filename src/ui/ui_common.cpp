@@ -1476,3 +1476,100 @@ void UICommon::updateFileProgress(bool is_printing, float percent, const char *f
         last_estimated_sec = 0xFFFFFFFF;
     }
 }
+
+void UICommon::showWCSLockDialog(const char *wcs_code, const char *wcs_name, void (*continue_callback)(lv_event_t*)) {
+    // Create modal backdrop
+    lv_obj_t *backdrop = lv_obj_create(lv_screen_active());
+    lv_obj_set_size(backdrop, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(backdrop, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(backdrop, LV_OPA_50, 0);
+    lv_obj_set_style_border_width(backdrop, 0, 0);
+    lv_obj_clear_flag(backdrop, LV_OBJ_FLAG_SCROLLABLE);
+    
+    // Create dialog container
+    lv_obj_t *dialog = lv_obj_create(backdrop);
+    lv_obj_set_size(dialog, 600, 300);
+    lv_obj_center(dialog);
+    lv_obj_set_style_bg_color(dialog, UITheme::BG_DARKER, 0);
+    lv_obj_set_style_border_color(dialog, UITheme::UI_WARNING, 0);
+    lv_obj_set_style_border_width(dialog, 3, 0);
+    lv_obj_set_style_pad_all(dialog, 20, 0);
+    lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
+    
+    // Title with warning icon and WCS code
+    lv_obj_t *title = lv_label_create(dialog);
+    char title_text[80];
+    if (wcs_name && strlen(wcs_name) > 0) {
+        snprintf(title_text, sizeof(title_text), LV_SYMBOL_WARNING " %s (%s) is Locked", wcs_code, wcs_name);
+    } else {
+        snprintf(title_text, sizeof(title_text), LV_SYMBOL_WARNING " %s is Locked", wcs_code);
+    }
+    lv_label_set_text(title, title_text);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(title, UITheme::UI_WARNING, 0);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(title, 560);
+    lv_obj_set_pos(title, 0, 0);
+    
+    // Warning message with centered text and more spacing from title
+    lv_obj_t *message = lv_label_create(dialog);
+    lv_label_set_text(message, "Modifying this position may affect fixtures or setups.\n\nAre you sure you want to continue?");
+    lv_obj_set_style_text_font(message, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(message, UITheme::TEXT_LIGHT, 0);
+    lv_obj_set_style_text_align(message, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(message, 560);
+    lv_label_set_long_mode(message, LV_LABEL_LONG_WRAP);
+    lv_obj_set_pos(message, 0, 75);
+    
+    // Cancel button (left)
+    lv_obj_t *btn_cancel = lv_button_create(dialog);
+    lv_obj_set_size(btn_cancel, 220, 50);
+    lv_obj_set_pos(btn_cancel, 40, 200);
+    lv_obj_set_style_bg_color(btn_cancel, UITheme::BG_MEDIUM, 0);
+    
+    lv_obj_t *lbl_cancel = lv_label_create(btn_cancel);
+    lv_label_set_text(lbl_cancel, "Cancel");
+    lv_obj_set_style_text_font(lbl_cancel, &lv_font_montserrat_18, 0);
+    lv_obj_center(lbl_cancel);
+    
+    // Close on Cancel
+    lv_obj_add_event_cb(btn_cancel, [](lv_event_t *e) {
+        lv_obj_t *backdrop = (lv_obj_t*)lv_event_get_user_data(e);
+        lv_obj_delete(backdrop);
+    }, LV_EVENT_CLICKED, backdrop);
+    
+    // Continue button (right) with warning icon
+    lv_obj_t *btn_continue = lv_button_create(dialog);
+    lv_obj_set_size(btn_continue, 220, 50);
+    lv_obj_set_pos(btn_continue, 280, 200);
+    lv_obj_set_style_bg_color(btn_continue, UITheme::UI_WARNING, 0);
+    
+    lv_obj_t *lbl_continue = lv_label_create(btn_continue);
+    lv_label_set_text(lbl_continue, LV_SYMBOL_WARNING " Continue");
+    lv_obj_set_style_text_font(lbl_continue, &lv_font_montserrat_18, 0);
+    lv_obj_center(lbl_continue);
+    
+    // Store callback and backdrop in user data
+    struct CallbackData {
+        void (*callback)(lv_event_t*);
+        lv_obj_t *backdrop;
+    };
+    
+    CallbackData *data = (CallbackData*)malloc(sizeof(CallbackData));
+    data->callback = continue_callback;
+    data->backdrop = backdrop;
+    
+    lv_obj_add_event_cb(btn_continue, [](lv_event_t *e) {
+        CallbackData *data = (CallbackData*)lv_event_get_user_data(e);
+        
+        // Call the continue callback
+        if (data->callback) {
+            data->callback(e);
+        }
+        
+        // Close dialog
+        lv_obj_delete(data->backdrop);
+        free(data);
+    }, LV_EVENT_CLICKED, data);
+}
+
