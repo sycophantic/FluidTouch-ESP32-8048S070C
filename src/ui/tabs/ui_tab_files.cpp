@@ -1197,7 +1197,12 @@ void UITabFiles::showUploadDialog(const char* filename, const char* fullPath, si
     
     // Destination
     lv_obj_t *lbl_dest = lv_label_create(content);
-    lv_label_set_text_fmt(lbl_dest, "Destination: /sd%s%s", FLUIDNC_UPLOAD_PATH, filename);
+    // Trim trailing slash from FLUIDNC_UPLOAD_PATH to avoid double slashes
+    String destPath = String(FLUIDNC_UPLOAD_PATH);
+    while (destPath.endsWith("/")) {
+        destPath = destPath.substring(0, destPath.length() - 1);
+    }
+    lv_label_set_text_fmt(lbl_dest, "Destination: /sd%s/%s", destPath.c_str(), filename);
     lv_obj_set_style_text_font(lbl_dest, &lv_font_montserrat_18, 0);
     lv_obj_set_style_text_color(lbl_dest, UITheme::TEXT_LIGHT, 0);
     lv_label_set_long_mode(lbl_dest, LV_LABEL_LONG_DOT);
@@ -1443,11 +1448,41 @@ void UITabFiles::closeUploadProgress(bool success, const char* error) {
                 }
             }
             
-            // Add Close button at bottom
-            lv_obj_t *btn_close = lv_btn_create(content);
+            // Add button container for two buttons side by side
+            lv_obj_t *btn_container = lv_obj_create(content);
+            lv_obj_set_size(btn_container, LV_PCT(100), 60);
+            lv_obj_align(btn_container, LV_ALIGN_BOTTOM_MID, 0, 0);
+            lv_obj_set_style_border_width(btn_container, 0, 0);
+            lv_obj_set_style_bg_opa(btn_container, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_pad_all(btn_container, 0, 0);
+            lv_obj_set_flex_flow(btn_container, LV_FLEX_FLOW_ROW);
+            lv_obj_set_flex_align(btn_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+            
+            // Go to Upload Folder button (LEFT)
+            lv_obj_t *btn_goto = lv_btn_create(btn_container);
+            lv_obj_set_size(btn_goto, 250, 50);
+            lv_obj_set_style_bg_color(btn_goto, UITheme::ACCENT_PRIMARY, 0);
+            lv_obj_add_event_cb(btn_goto, [](lv_event_t *e) {
+                if (upload_progress_dialog) {
+                    lv_obj_delete(upload_progress_dialog);
+                    upload_progress_dialog = nullptr;
+                    upload_progress_bar = nullptr;
+                    upload_progress_label = nullptr;
+                }
+                navigateToUploadDirectory();
+            }, LV_EVENT_CLICKED, nullptr);
+            
+            lv_obj_t *lbl_goto = lv_label_create(btn_goto);
+            lv_label_set_text(lbl_goto, "Open Upload Folder");
+            lv_obj_set_style_text_font(lbl_goto, &lv_font_montserrat_18, 0);
+            lv_obj_center(lbl_goto);
+            
+            // Close button (RIGHT)
+            lv_obj_t *btn_close = lv_btn_create(btn_container);
             lv_obj_set_size(btn_close, 180, 50);
-            lv_obj_align(btn_close, LV_ALIGN_BOTTOM_MID, 0, 0);
-            lv_obj_set_style_bg_color(btn_close, UITheme::ACCENT_PRIMARY, 0);
+            lv_obj_set_style_bg_color(btn_close, UITheme::BG_BUTTON, 0);
+            lv_obj_set_style_border_color(btn_close, UITheme::BORDER_MEDIUM, 0);
+            lv_obj_set_style_border_width(btn_close, 2, 0);
             lv_obj_add_event_cb(btn_close, [](lv_event_t *e) {
                 if (upload_progress_dialog) {
                     lv_obj_delete(upload_progress_dialog);
@@ -1517,4 +1552,35 @@ void UITabFiles::closeUploadProgress(bool success, const char* error) {
             }
         }
     }
+}
+
+void UITabFiles::navigateToUploadDirectory() {
+    Serial.println("[Files] Navigating to upload directory");
+    
+    // Switch to FluidNC SD storage
+    current_storage = StorageSource::FLUIDNC_SD;
+    
+    // Update the dropdown to reflect the storage change
+    if (storage_dropdown) {
+        lv_dropdown_set_selected(storage_dropdown, static_cast<uint16_t>(StorageSource::FLUIDNC_SD));
+    }
+    
+    // Navigate to the upload directory (using FLUIDNC_UPLOAD_PATH from config.h)
+    // FluidNC paths need /sd prefix, trim any leading/trailing slashes from FLUIDNC_UPLOAD_PATH
+    String uploadPath = String(FLUIDNC_UPLOAD_PATH);
+    // Remove leading slash if present before prepending /sd
+    if (uploadPath.startsWith("/")) {
+        uploadPath = uploadPath.substring(1);
+    }
+    // Remove trailing slash(es) to ensure clean path
+    while (uploadPath.endsWith("/")) {
+        uploadPath = uploadPath.substring(0, uploadPath.length() - 1);
+    }
+    current_path = std::string("/sd/") + uploadPath.c_str();
+    
+    // Invalidate cache to force a fresh directory listing
+    fluidnc_sd_cache.is_cached = false;
+    
+    // Refresh the file list
+    refreshFileList(current_path);
 }

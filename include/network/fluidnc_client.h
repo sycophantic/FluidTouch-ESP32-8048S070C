@@ -153,6 +153,7 @@ private:
     
     // Connection tracking
     static bool everConnectedSuccessfully; // True once first status report received, never reset
+    static bool isHandlingDisconnect;     // Guard to prevent re-entrant close() calls
     
     // WebSocket event handlers
     static void onMessageCallback(websockets::WebsocketsMessage message);

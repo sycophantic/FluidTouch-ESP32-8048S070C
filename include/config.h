@@ -68,6 +68,6 @@
 #endif
 
 // Upload Configuration
-#define FLUIDNC_UPLOAD_PATH "/fluidtouch/uploads/"
+#define FLUIDNC_UPLOAD_PATH "/fluidtouch/uploads/"  // Automatically created if missing
 
 #endif // CONFIG_H

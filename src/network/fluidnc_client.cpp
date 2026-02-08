@@ -20,6 +20,7 @@ uint32_t FluidNCClient::lastPollingMs = 0;
 uint32_t FluidNCClient::lastGCodePollMs = 0;
 uint32_t FluidNCClient::lastAutoReportAttemptMs = 0;
 bool FluidNCClient::everConnectedSuccessfully = false;
+bool FluidNCClient::isHandlingDisconnect = false;
 
 void FluidNCClient::init() {
     if (initialized) return;
@@ -112,14 +113,20 @@ bool FluidNCClient::connect(const MachineConfig &config) {
 
 void FluidNCClient::disconnect() {
     Serial.println("[FluidNC] Disconnecting");
-    webSocket.close();
+    if (webSocket.available()) {
+        webSocket.close();
+    }
     currentStatus.is_connected = false;
     currentStatus.state = STATE_DISCONNECTED;
 }
 
 void FluidNCClient::stopReconnectionAttempts() {
     Serial.println("[FluidNC] Stopping reconnection attempts");
-    webSocket.close();
+    // Don't call close() if we're already handling a disconnect event
+    // This prevents re-entrant calls that cause stack overflow
+    if (!isHandlingDisconnect && webSocket.available()) {
+        webSocket.close();
+    }
     currentStatus.is_connected = false;
     currentStatus.state = STATE_DISCONNECTED;
 }
@@ -281,6 +288,9 @@ void FluidNCClient::onEventsCallback(WebsocketsEvent event, String data) {
         case WebsocketsEvent::ConnectionClosed:
             Serial.println("[FluidNC] WebSocket disconnected");
             
+            // Set flag to prevent re-entrant close() calls
+            isHandlingDisconnect = true;
+            
             // Only show popup if we've ever successfully received a status report
             if (everConnectedSuccessfully) {
                 // Build error message
@@ -294,6 +304,9 @@ void FluidNCClient::onEventsCallback(WebsocketsEvent event, String data) {
             
             currentStatus.is_connected = false;
             currentStatus.state = STATE_DISCONNECTED;
+            
+            // Clear flag after handling disconnect
+            isHandlingDisconnect = false;
             break;
             
         case WebsocketsEvent::GotPing:

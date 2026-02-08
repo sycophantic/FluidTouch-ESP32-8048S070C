@@ -18,6 +18,7 @@ public:
 
 private:
     static bool _uploading;
+    static bool ensureDirectoryExists(const String& machineIP, const String& dirPath);
 };
 
 #endif // UPLOAD_MANAGER_H
