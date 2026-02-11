@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 // Version
-#define FLUIDTOUCH_VERSION "1.0.2"
+#define FLUIDTOUCH_VERSION "1.0.3"
 
 // Display settings
 #define SCREEN_WIDTH  800
@@ -68,6 +68,6 @@
 #endif
 
 // Upload Configuration
-#define FLUIDNC_UPLOAD_PATH "/fluidtouch/uploads/"
+#define FLUIDNC_UPLOAD_PATH "/fluidtouch/uploads/"  // Automatically created if missing
 
 #endif // CONFIG_H

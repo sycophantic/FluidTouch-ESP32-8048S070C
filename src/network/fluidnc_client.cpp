@@ -2,21 +2,25 @@
 #include "ui/ui_common.h"
 #include "ui/tabs/control/ui_tab_control_probe.h"
 #include <WiFi.h>
+#include <ESPmDNS.h>
+
+using namespace websockets;
 
 // Static member initialization
-WebSocketsClient FluidNCClient::webSocket;
+WebsocketsClient FluidNCClient::webSocket;
 FluidNCStatus FluidNCClient::currentStatus;
 MachineConfig FluidNCClient::currentConfig;
 uint32_t FluidNCClient::lastStatusRequestMs = 0;
 bool FluidNCClient::initialized = false;
-MessageCallback FluidNCClient::messageCallback = nullptr;
-MessageCallback FluidNCClient::terminalCallback = nullptr;
+FluidNCMessageCallback FluidNCClient::messageCallback = nullptr;
+FluidNCMessageCallback FluidNCClient::terminalCallback = nullptr;
 bool FluidNCClient::autoReportingEnabled = false;
 bool FluidNCClient::autoReportingAttempted = false;
 uint32_t FluidNCClient::lastPollingMs = 0;
 uint32_t FluidNCClient::lastGCodePollMs = 0;
 uint32_t FluidNCClient::lastAutoReportAttemptMs = 0;
 bool FluidNCClient::everConnectedSuccessfully = false;
+bool FluidNCClient::isHandlingDisconnect = false;
 
 void FluidNCClient::init() {
     if (initialized) return;
@@ -43,39 +47,92 @@ bool FluidNCClient::connect(const MachineConfig &config) {
     Serial.printf("[FluidNC] Connecting to %s:%d via WebSocket\n", 
                   config.fluidnc_url, config.websocket_port);
     
-    // Configure WebSocket with 1-second reconnect for initial connection (will change to 24h once connected)
-    webSocket.begin(config.fluidnc_url, config.websocket_port, "/");
-    webSocket.onEvent(onWebSocketEvent);
-    webSocket.setReconnectInterval(1000);  // 1 second for initial connection attempts
+    // Resolve hostname if needed (mDNS support)
+    String resolvedHost = String(config.fluidnc_url);
+    IPAddress serverIP;
+    if (resolvedHost.indexOf('.') == -1 || resolvedHost.endsWith(".local")) {
+        // It's a hostname or mDNS name, try to resolve it
+        Serial.printf("[FluidNC] Resolving hostname: %s\n", resolvedHost.c_str());
+        
+        // Try resolving with retries (mDNS can be slow to respond)
+        bool resolved = false;
+        for (int attempt = 0; attempt < 5 && !resolved; attempt++) {
+            if (attempt > 0) {
+                Serial.printf("[FluidNC] Retry attempt %d/5...\n", attempt + 1);
+                delay(1000);  // Longer delay between retries for mDNS
+            }
+            
+            if (resolvedHost.endsWith(".local")) {
+                // Use MDNS.queryHost() for .local hostnames (strip the .local suffix)
+                String hostname = resolvedHost.substring(0, resolvedHost.length() - 6);
+                Serial.printf("[FluidNC] Using mDNS query for: %s\n", hostname.c_str());
+                serverIP = MDNS.queryHost(hostname);
+            } else {
+                // Use standard DNS for non-.local hostnames
+                WiFi.hostByName(resolvedHost.c_str(), serverIP);
+            }
+            
+            // Validate that we got a real IP address (not 0.0.0.0)
+            if (serverIP != IPAddress(0, 0, 0, 0)) {
+                Serial.printf("[FluidNC] Resolved on attempt %d to IP: %s\n", attempt + 1, serverIP.toString().c_str());
+                resolved = true;
+            } else {
+                Serial.printf("[FluidNC] Attempt %d returned invalid IP (0.0.0.0)\n", attempt + 1);
+            }
+        }
+        
+        if (!resolved) {
+            Serial.printf("[FluidNC] Failed to resolve hostname: %s after 5 attempts\n", resolvedHost.c_str());
+            Serial.println("[FluidNC] Tip: Try using the IP address instead, or check that mDNS is working on your network");
+            return false;
+        }
+        resolvedHost = serverIP.toString();
+        Serial.printf("[FluidNC] Using resolved IP: %s\n", resolvedHost.c_str());
+    }
     
-    // Enable very relaxed heartbeat - only needed when machine is idle (no status updates)
-    // Send ping every 30 seconds, expect pong within 10 seconds, disconnect after 3 missed pongs
-    // Total timeout: ~90 seconds of inactivity before disconnect
-    webSocket.enableHeartbeat(30000, 10000, 3);
-    Serial.println("[FluidNC] WebSocket heartbeat enabled (30s interval, 10s timeout, 3 retries)");
+    // Set up event callbacks
+    webSocket.onMessage(onMessageCallback);
+    webSocket.onEvent(onEventsCallback);
     
-    currentStatus.is_connected = false;
+    // Connect to WebSocket (ws://hostname:port/)
+    char wsUrl[128];
+    snprintf(wsUrl, sizeof(wsUrl), "ws://%s:%d/", resolvedHost.c_str(), config.websocket_port);
+    bool connected = webSocket.connect(wsUrl);
+    
+    if (!connected) {
+        Serial.println("[FluidNC] Initial connection failed");
+        currentStatus.is_connected = false;
+        return false;
+    }
+    
+    Serial.println("[FluidNC] WebSocket connection initiated");
+    currentStatus.is_connected = false;  // Will be set to true when first message received
     
     return true;
 }
 
 void FluidNCClient::disconnect() {
     Serial.println("[FluidNC] Disconnecting");
-    webSocket.disconnect();
+    if (webSocket.available()) {
+        webSocket.close();
+    }
     currentStatus.is_connected = false;
     currentStatus.state = STATE_DISCONNECTED;
 }
 
 void FluidNCClient::stopReconnectionAttempts() {
     Serial.println("[FluidNC] Stopping reconnection attempts");
-    webSocket.disconnect();  // Fully disconnect to stop retry attempts
-    webSocket.setReconnectInterval(86400000);  // 24 hours - effectively disabled
+    // Don't call close() if we're already handling a disconnect event
+    // This prevents re-entrant calls that cause stack overflow
+    if (!isHandlingDisconnect && webSocket.available()) {
+        webSocket.close();
+    }
     currentStatus.is_connected = false;
     currentStatus.state = STATE_DISCONNECTED;
 }
 
 bool FluidNCClient::isConnected() {
-    return currentStatus.is_connected;
+    return currentStatus.is_connected && webSocket.available();
 }
 
 bool FluidNCClient::isAutoReporting() {
@@ -85,11 +142,11 @@ bool FluidNCClient::isAutoReporting() {
 void FluidNCClient::loop() {
     if (!initialized) return;
     
-    // Handle WebSocket events
-    webSocket.loop();
+    // Handle WebSocket events - ArduinoWebsockets handles polling internally
+    webSocket.poll();
     
     // Only check auto-reporting and polling if WebSocket is connected
-    if (!webSocket.isConnected()) {
+    if (!webSocket.available()) {
         return;
     }
     
@@ -122,14 +179,14 @@ void FluidNCClient::sendCommand(const char* command) {
     }
     
     Serial.printf("[FluidNC] Sending command: %s\n", command);
-    webSocket.sendTXT(command);
+    webSocket.send(command);
 }
 
 void FluidNCClient::requestStatusReport() {
     if (!currentStatus.is_connected) return;
     
     // Send status query command (realtime command)
-    webSocket.sendTXT("?");
+    webSocket.send("?");
 }
 
 String FluidNCClient::getMachineIP() {
@@ -160,7 +217,7 @@ String FluidNCClient::getMachineIP() {
     return url;
 }
 
-void FluidNCClient::setMessageCallback(MessageCallback callback) {
+void FluidNCClient::setMessageCallback(FluidNCMessageCallback callback) {
     messageCallback = callback;
     Serial.println("[FluidNC] Message callback registered");
 }
@@ -170,7 +227,7 @@ void FluidNCClient::clearMessageCallback() {
     Serial.println("[FluidNC] Message callback cleared");
 }
 
-void FluidNCClient::setTerminalCallback(MessageCallback callback) {
+void FluidNCClient::setTerminalCallback(FluidNCMessageCallback callback) {
     terminalCallback = callback;
     Serial.println("[FluidNC] Terminal callback registered");
 }
@@ -180,13 +237,61 @@ void FluidNCClient::clearTerminalCallback() {
     Serial.println("[FluidNC] Terminal callback cleared");
 }
 
-void FluidNCClient::onWebSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
-    switch(type) {
-        case WStype_DISCONNECTED:
+void FluidNCClient::onMessageCallback(WebsocketsMessage message) {
+    const char* payload = message.c_str();
+    
+    // Only log non-status messages to reduce serial spam
+    if (payload[0] != '<') {
+        Serial.printf("[FluidNC] Received: %s\n", payload);
+    }
+    
+    // Call message callback if registered (for file lists, etc.)
+    if (messageCallback) {
+        messageCallback(payload);
+    }
+    
+    // Call terminal callback if registered (for terminal display)
+    // Terminal tab will filter out status messages (starting with '<')
+    if (terminalCallback) {
+        terminalCallback(payload);
+    }
+    
+    // Parse different message types
+    if (payload[0] == '<') {
+        // Status report: <Idle|MPos:0.000,0.000,0.000|WPos:0.000,0.000,0.000|...>
+        parseStatusReport(payload);
+    } else if (strncmp(payload, "[GC:", 4) == 0) {
+        // GCode parser state: [GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]
+        parseGCodeState(payload);
+    } else if (payload[0] == '[') {
+        // Other realtime feedback: [MSG:...], [G92:...], etc.
+        parseRealtimeFeedback(payload);
+    }
+}
+
+void FluidNCClient::onEventsCallback(WebsocketsEvent event, String data) {
+    switch(event) {
+        case WebsocketsEvent::ConnectionOpened:
+            Serial.println("[FluidNC] WebSocket connected");
+            // Don't set is_connected yet - wait for first status report
+            currentStatus.state = STATE_IDLE;
+            currentStatus.last_update_ms = millis();
+            
+            // Initialize polling timestamps to allow immediate fallback polling if auto-reporting fails
+            lastPollingMs = millis() - 1000;
+            lastGCodePollMs = millis() - 10000;
+            
+            // Attempt to enable automatic status reporting
+            attemptEnableAutoReporting();
+            break;
+            
+        case WebsocketsEvent::ConnectionClosed:
             Serial.println("[FluidNC] WebSocket disconnected");
             
+            // Set flag to prevent re-entrant close() calls
+            isHandlingDisconnect = true;
+            
             // Only show popup if we've ever successfully received a status report
-            // This prevents false alarms during initial connection handshake
             if (everConnectedSuccessfully) {
                 // Build error message
                 char error_msg[256];
@@ -195,89 +300,21 @@ void FluidNCClient::onWebSocketEvent(WStype_t type, uint8_t* payload, size_t len
                 
                 // Show error dialog
                 UICommon::showConnectionErrorDialog("Machine Disconnected", error_msg);
-                
-                currentStatus.is_connected = false;
-                currentStatus.state = STATE_DISCONNECTED;
-            } else {
-                // Not yet successfully connected - keep trying with 1-second reconnect interval
-                Serial.println("[FluidNC] Connection attempt failed, retrying...");
-                webSocket.setReconnectInterval(1000);  // Keep trying every 1 second
-                currentStatus.is_connected = false;
-                currentStatus.state = STATE_DISCONNECTED;
             }
+            
+            currentStatus.is_connected = false;
+            currentStatus.state = STATE_DISCONNECTED;
+            
+            // Clear flag after handling disconnect
+            isHandlingDisconnect = false;
             break;
             
-        case WStype_CONNECTED:
-            Serial.printf("[FluidNC] WebSocket connected to: %s\n", payload);
-            // Don't set is_connected yet - wait for first status report
-            currentStatus.state = STATE_IDLE;
-            currentStatus.last_update_ms = millis();
-            
-            // Now that we're connected, set reconnect interval to 24 hours to effectively disable auto-reconnect
-            webSocket.setReconnectInterval(86400000);  // 24 hours
-            Serial.println("[FluidNC] Connected - auto-reconnect disabled (24h interval)");
-            
-            // Initialize polling timestamps to allow immediate fallback polling if auto-reporting fails
-            // Set to (now - 1000) so first poll happens right after 2s auto-reporting timeout
-            lastPollingMs = millis() - 1000;
-            lastGCodePollMs = millis() - 10000;
-            
-            // Attempt to enable automatic status reporting
-            attemptEnableAutoReporting();
-            break;
-            
-        case WStype_TEXT:
-        case WStype_BIN:
-            {
-                // FluidNC sends status reports as binary frames
-                char* message = (char*)payload;
-                
-                // Only log non-status messages to reduce serial spam
-                if (message[0] != '<') {
-                    Serial.printf("[FluidNC] Received (%s): %s\n", 
-                                 type == WStype_TEXT ? "TEXT" : "BIN", message);
-                }
-                
-                // Call message callback if registered (for file lists, etc.)
-                if (messageCallback) {
-                    messageCallback(message);
-                }
-                
-                // Call terminal callback if registered (for terminal display)
-                // Terminal tab will filter out status messages (starting with '<')
-                if (terminalCallback) {
-                    terminalCallback(message);
-                }
-                
-                // Parse different message types
-                if (message[0] == '<') {
-                    // Status report: <Idle|MPos:0.000,0.000,0.000|WPos:0.000,0.000,0.000|...>
-                    parseStatusReport(message);
-                } else if (strncmp(message, "[GC:", 4) == 0) {
-                    // GCode parser state: [GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]
-                    parseGCodeState(message);
-                } else if (message[0] == '[') {
-                    // Other realtime feedback: [MSG:...], [G92:...], etc.
-                    parseRealtimeFeedback(message);
-                }
-                // Other message types can be added here
-            }
-            break;
-            
-        case WStype_ERROR:
-            // Log error but don't disconnect - let the connection recover
-            Serial.printf("[FluidNC] WebSocket error (non-fatal): %s\n", payload);
-            break;
-            
-        case WStype_PING:
+        case WebsocketsEvent::GotPing:
             Serial.println("[FluidNC] Received ping");
             break;
             
-        case WStype_PONG:
+        case WebsocketsEvent::GotPong:
             Serial.println("[FluidNC] Received pong");
-            break;
-            
-        default:
             break;
     }
 }
@@ -628,7 +665,7 @@ void FluidNCClient::extractString(const char* str, const char* key, char* dest, 
 
 void FluidNCClient::attemptEnableAutoReporting() {
     Serial.println("[FluidNC] Attempting to enable automatic reporting (250ms)");
-    webSocket.sendTXT("$Report/Interval=250\n");
+    webSocket.send("$Report/Interval=250\n");
     
     autoReportingAttempted = true;
     autoReportingEnabled = false;  // Will be set true when we receive status
@@ -646,14 +683,14 @@ void FluidNCClient::performFallbackPolling() {
     // Send status poll ("?") every 1 second
     if (now - lastPollingMs >= 1000) {
         Serial.println("[FluidNC] Fallback polling: sending '?'");
-        webSocket.sendTXT("?");
+        webSocket.send("?");
         lastPollingMs = now;
     }
     
     // Send GCode parser state poll ("$G") every 10 seconds
     if (now - lastGCodePollMs >= 10000) {
         Serial.println("[FluidNC] Fallback polling: sending '$G'");
-        webSocket.sendTXT("$G\n");
+        webSocket.send("$G\n");
         lastGCodePollMs = now;
     }
 }

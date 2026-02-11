@@ -9,6 +9,62 @@
 
 bool UploadManager::_uploading = false;
 
+bool UploadManager::ensureDirectoryExists(const String& machineIP, const String& dirPath) {
+    Serial.printf("[UploadManager] Ensuring directory exists: %s\n", dirPath.c_str());
+    
+    // FluidNC /upload endpoint handles SD card operations (including directory creation)
+    // Parse path to create each parent directory level
+    String parentPath = "";
+    String workPath = dirPath;
+    
+    // Remove leading slash and trailing slash
+    if (workPath.startsWith("/")) workPath = workPath.substring(1);
+    if (workPath.endsWith("/")) workPath = workPath.substring(0, workPath.length() - 1);
+    
+    // Split path by '/' and create each level
+    int slashPos = 0;
+    while ((slashPos = workPath.indexOf('/')) > 0 || workPath.length() > 0) {
+        String dirName;
+        if (slashPos > 0) {
+            dirName = workPath.substring(0, slashPos);
+            workPath = workPath.substring(slashPos + 1);
+        } else {
+            dirName = workPath;
+            workPath = "";
+        }
+        
+        if (dirName.length() == 0) break;
+        
+        Serial.printf("[UploadManager] Creating directory: %s in path: %s\n", dirName.c_str(), parentPath.c_str());
+        
+        // Build URL: /upload?action=createdir&filename=dirname&path=/parent/path
+        String url = "http://" + machineIP + "/upload?action=createdir&filename=";
+        url += dirName;
+        url += "&path=";
+        url += parentPath.length() > 0 ? parentPath : "/";
+        
+        HTTPClient http;
+        http.begin(url);
+        http.setTimeout(3000);
+        
+        int httpCode = http.GET();
+        if (httpCode > 0) {
+            Serial.printf("[UploadManager] HTTP response: %d\n", httpCode);
+            // 200 = success, even if directory already exists
+        } else {
+            Serial.printf("[UploadManager] HTTP request failed: %s\n", http.errorToString(httpCode).c_str());
+        }
+        http.end();
+        
+        // Update parent path for next level
+        parentPath += "/" + dirName;
+        
+        if (workPath.length() == 0) break;
+    }
+    
+    return true;
+}
+
 bool UploadManager::init() {
     Serial.println("[UploadManager] Initializing SD card...");
     
@@ -125,6 +181,13 @@ bool UploadManager::uploadFile(const char* localPath,
     // FluidNC expects path as directory only, filename goes in form field name
     String destDir = String(FLUIDNC_UPLOAD_PATH);
     String fullPath = destDir + filenameStr;
+    
+    // Ensure destination directory exists on FluidNC
+    Serial.println("[UploadManager] Checking/creating destination directory...");
+    if (!ensureDirectoryExists(machineIP, destDir)) {
+        Serial.println("[UploadManager] Warning: Could not verify directory creation");
+        // Continue anyway - the upload might still work if directory exists
+    }
     
     // Get current timestamp
     time_t now = time(nullptr);

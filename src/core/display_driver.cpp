@@ -33,7 +33,7 @@ LGFX::LGFX(void) {
         cfg.pin_vsync   = GPIO_NUM_41;
         cfg.pin_hsync   = GPIO_NUM_40;
         cfg.pin_pclk    = GPIO_NUM_39;
-        cfg.freq_write  = 14000000;  // 14MHz - best stability
+        cfg.freq_write  = 18000000;  // 18MHz - stable with IDF 5.3
 
         cfg.hsync_polarity    = 1;  // Different from Basic!
         cfg.hsync_front_porch = 8;
@@ -73,7 +73,7 @@ LGFX::LGFX(void) {
         cfg.pin_vsync   = GPIO_NUM_40;
         cfg.pin_hsync   = GPIO_NUM_39;
         cfg.pin_pclk    = GPIO_NUM_0;
-        cfg.freq_write  = 10000000;  // 10MHz
+        cfg.freq_write  = 14000000;  // 14MHz - matching Advance
 
         cfg.hsync_polarity    = 0;
         cfg.hsync_front_porch = 40;
@@ -134,15 +134,15 @@ LGFX::LGFX(void) {
         cfg.pin_sda    = TOUCH_SDA;  // GPIO 15
         cfg.pin_scl    = TOUCH_SCL;  // GPIO 16
         cfg.pin_rst    = -1;  // Reset handled by STC8H1K28 via I2C
-        cfg.freq       = 400000;
+        cfg.freq       = 400000;     // Keep 400kHz - works well on Advance
 #else
         // Basic: Touch I2C configuration
         cfg.i2c_port   = 0;
         cfg.i2c_addr   = 0x5D;
         cfg.pin_sda    = TOUCH_SDA;  // GPIO 19
         cfg.pin_scl    = TOUCH_SCL;  // GPIO 20
-        cfg.pin_rst    = -1;  // No reset pin defined in Elecrow schematic
-        cfg.freq       = 400000;
+        cfg.pin_rst    = TOUCH_RST;  // GPIO 38 - Required for proper GT911 reset
+        cfg.freq       = 100000;     // 100kHz for better compatibility (was 400kHz)
 #endif
 
         _touch_instance.config(cfg);
@@ -163,9 +163,8 @@ bool DisplayDriver::init() {
 #ifdef BACKLIGHT_PWM
     // Basic: PWM backlight - configure but keep OFF until screen is cleared
     pinMode(2, OUTPUT);
-    ledcSetup(1, 300, 8);
-    ledcAttachPin(2, 1);
-    ledcWrite(1, 0);  // Start with backlight OFF
+    ledcAttach(2, 300, 8);  // IDF 5.3: attach PWM to pin 2, 300Hz, 8-bit resolution
+    ledcWrite(2, 0);  // Start with backlight OFF
     Serial.println("Backlight configured (OFF)");
     
 #elif defined(BACKLIGHT_I2C)
@@ -193,8 +192,37 @@ bool DisplayDriver::init() {
     delay(50);
     
     // Now turn on backlight after screen is cleared
-    ledcWrite(1, 255);
+    ledcWrite(2, 255);  // Pin 2, not channel
     Serial.println("Backlight ON (PWM)");
+    
+    // Verify GT911 touch controller is present on Basic hardware
+    Serial.println("Verifying GT911 touch controller...");
+    Wire.begin(TOUCH_SDA, TOUCH_SCL);
+    Wire.setClock(100000);  // 100kHz for better compatibility
+    Wire.setTimeOut(100);   // Prevent hangs
+    delay(50);  // Allow I2C to stabilize
+    
+    // Scan I2C bus to confirm GT911 is responsive
+    bool gt911_found = false;
+    Wire.beginTransmission(GT911_ADDR);
+    if (Wire.endTransmission() == 0) {
+        gt911_found = true;
+        Serial.printf("  GT911 found at 0x%02X (Primary address)\n", GT911_ADDR);
+    } else {
+        // Try alternate address 0x14
+        Wire.beginTransmission(0x14);
+        if (Wire.endTransmission() == 0) {
+            gt911_found = true;
+            Serial.printf("  GT911 found at 0x14 (Alternate address)\n");
+        }
+    }
+    
+    if (gt911_found) {
+        Serial.println("  GT911 verification: SUCCESS");
+    } else {
+        Serial.println("  WARNING: GT911 not responding on I2C bus!");
+        Serial.println("  Touch may not work. Check connections and reset pin.");
+    }
 #endif
     
 #ifdef BACKLIGHT_I2C
@@ -203,7 +231,19 @@ bool DisplayDriver::init() {
     Wire.setTimeOut(100);   // Prevent hangs
     delay(50);  // Give I2C time to stabilize
     
+#ifdef HARDWARE_ADVANCE_V12
+    // v1.2: Simpler backlight control via STC8H1K28
+    // v1.2 uses 0x05-0x10 range (0x05=off, 0x10=max brightness)
+    Serial.println("Initializing Advance v1.2 backlight...");
+    Wire.beginTransmission(0x30);
+    Wire.write(0x10);  // Maximum brightness
+    uint8_t initResult = Wire.endTransmission();
+    Serial.printf("  v1.2 backlight result: %d\n", initResult);
+    delay(100);  // Give GT911 time to initialize
+#else
+    // v1.3: Full STC8H1K28 initialization with GT911 reset handling
     // Wake STC8H1K28 microcontroller (per Elecrow example)
+    Serial.println("Initializing Advance v1.3 backlight...");
     Serial.println("Waking STC8H1K28 microcontroller...");
     Wire.beginTransmission(0x30);
     Wire.write(0x19);  // Wake command
@@ -225,6 +265,7 @@ bool DisplayDriver::init() {
     Wire.write(0x18);  // Config command 2  
     Wire.endTransmission();
     delay(100);  // Give GT911 time to initialize after STC8H1K28 reset
+#endif
     
     // Scan I2C to confirm GT911 is present
     Serial.println("Scanning I2C for GT911...");
@@ -242,21 +283,27 @@ bool DisplayDriver::init() {
     Serial.printf("Found %d I2C device(s), GT911: %s\n", deviceCount, gt911_found ? "YES" : "NO");
     
     // Turn on backlight via STC8H1K28
-    // The STC8H1K28 controls LCD backlight via P3.5 and brightness via P1.1
-    // All control is via I2C commands to address 0x30
     Serial.println("Enabling backlight via STC8H1K28...");
     
-    // Try sending brightness value (0 = brightest, 245 = off)
+#ifdef HARDWARE_ADVANCE_V12
+    // v1.2: 0x05-0x10 range (0x05=off, 0x10=max)
+    Wire.beginTransmission(0x30);
+    Wire.write(0x10);  // Maximum brightness
+    uint8_t blResult = Wire.endTransmission();
+    Serial.printf("  v1.2 brightness: %d\n", blResult);
+#else
+    // v1.3: 0x00-0xF5 range (0x00=max, 0xF5=off)
     Wire.beginTransmission(0x30);
     Wire.write(0x00);  // Maximum brightness
     uint8_t blResult = Wire.endTransmission();
-    Serial.printf("  Brightness command result: %d\n", blResult);
+    Serial.printf("  v1.3 brightness: %d\n", blResult);
     delay(10);
     
-    // Also try the "buzzer off" command in case backlight shares control
+    // Also try the "buzzer off" command
     Wire.beginTransmission(0x30);
     Wire.write(0xF7);  // 247 = buzzer off (per docs)
     Wire.endTransmission();
+#endif
     delay(10);
     
     Serial.println("Backlight initialization complete");
@@ -311,11 +358,18 @@ void DisplayDriver::setBacklight(uint8_t brightness_percent) {
     
 #ifdef BACKLIGHT_PWM
     // Basic: PWM backlight on GPIO2
-    ledcWrite(1, hw_value);
+    ledcWrite(2, hw_value);  // Pin 2, not channel
 #elif defined(BACKLIGHT_I2C)
     // Advance: I2C backlight controller (STC8H1K28 at address 0x30)
-    // Brightness: 0 = brightest, 245 = off
-    uint8_t i2c_value = 245 - ((hw_value * 245) / 255);
+    uint8_t i2c_value;
+#ifdef HARDWARE_ADVANCE_V12
+    // v1.2: 0x05-0x10 range (0x05=off, 0x10=max brightness)
+    // Map 0-255 to 0x05-0x10 (5-16 decimal)
+    i2c_value = 5 + ((hw_value * 11) / 255);
+#else
+    // v1.3: 0x00-0xF5 range (0x00=max, 0xF5=off)
+    i2c_value = 245 - ((hw_value * 245) / 255);
+#endif
     Wire.beginTransmission(0x30);
     Wire.write(i2c_value);
     Wire.endTransmission();
@@ -330,15 +384,23 @@ void DisplayDriver::setBacklightOn() {
 void DisplayDriver::setBacklightOff() {
 #ifdef BACKLIGHT_PWM
     // Basic: PWM backlight on GPIO2
-    ledcWrite(1, 0);
+    ledcWrite(2, 0);  // Pin 2, not channel
     Serial.println("Backlight OFF (PWM)");
 #elif defined(BACKLIGHT_I2C)
     // Advance: I2C backlight controller (STC8H1K28 at address 0x30)
-    // Send 0xF5 (245) for off
+#ifdef HARDWARE_ADVANCE_V12
+    // v1.2: Send 0x05 for off
+    Wire.beginTransmission(0x30);
+    Wire.write(0x05);
+    Wire.endTransmission();
+    Serial.println("Backlight OFF (I2C v1.2)");
+#else
+    // v1.3: Send 0xF5 for off
     Wire.beginTransmission(0x30);
     Wire.write(0xF5);
     Wire.endTransmission();
-    Serial.println("Backlight OFF (I2C)");
+    Serial.println("Backlight OFF (I2C v1.3)");
+#endif
 #endif
 }
 

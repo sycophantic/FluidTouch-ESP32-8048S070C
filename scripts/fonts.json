@@ -1,0 +1,13 @@
+{
+  "fonts": [
+    {
+      "name": "fontawesome_icons_20",
+      "size": 20,
+      "icons": {
+        "lock": "0xf023",
+        "unlock": "0xf09c"
+      },
+      "description": "FontAwesome lock/unlock icons for WCS settings"
+    }
+  ]
+}

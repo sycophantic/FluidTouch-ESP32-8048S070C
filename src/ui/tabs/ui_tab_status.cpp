@@ -1,8 +1,12 @@
 #include "ui/tabs/ui_tab_status.h"
 #include "ui/tabs/settings/ui_tab_settings_jog.h"
 #include "ui/ui_theme.h"
+#include "ui/machine_config.h"
+#include "ui/wcs_config.h"
+#include "ui/fonts/fontawesome_icons_20.h"
 #include "network/fluidnc_client.h"
 #include <Arduino.h>
+#include <Preferences.h>
 #include <cstring>
 #include <stdio.h>
 
@@ -1240,6 +1244,15 @@ void UITabStatus::showWCSPopup() {
     const char* wcs_names[] = {"G54", "G55", "G56", "G57", "G58", "G59"};
     current_wcs_index = -1;  // Reset current WCS tracking
     
+    // Load WCS configurations from Preferences
+    char wcs_custom_names[6][32] = {{0}};  // Custom names for G54-G59
+    bool wcs_locked[6] = {false};          // Lock status for G54-G59
+    
+    int machine_index = MachineConfigManager::getSelectedMachineIndex();
+    if (machine_index >= 0) {
+        WCSConfig::loadWCSConfig(machine_index, wcs_custom_names, wcs_locked);
+    }
+    
     for (int i = 0; i < 6; i++) {
         // Calculate position: column 0 (left) for G54-G56, column 1 (right) for G57-G59
         int col = i / 3;  // 0 for indices 0-2, 1 for indices 3-5
@@ -1253,20 +1266,43 @@ void UITabStatus::showWCSPopup() {
         lv_obj_set_style_bg_color(btn, UITheme::BG_BUTTON, LV_PART_MAIN);
         lv_obj_set_style_pad_all(btn, 8, LV_PART_MAIN);
         
+        // Add transparent border by default to prevent layout shift when selected
+        lv_obj_set_style_border_width(btn, 2, LV_PART_MAIN);
+        lv_obj_set_style_border_color(btn, UITheme::BG_BUTTON, LV_PART_MAIN);  // Match background
+        
         // Check if this is the current WCS
         bool is_current = (strcmp(wcs_names[i], lv_label_get_text(lbl_modal_wcs_value)) == 0);
         if (is_current) {
             current_wcs_index = i;  // Store which button is current
             lv_obj_set_style_border_color(btn, UITheme::ACCENT_SECONDARY, LV_PART_MAIN);
-            lv_obj_set_style_border_width(btn, 2, LV_PART_MAIN);
         }
         
-        // WCS name label (large, yellow)
-        lv_obj_t *lbl_name = lv_label_create(btn);
-        lv_label_set_text(lbl_name, wcs_names[i]);
-        lv_obj_set_style_text_font(lbl_name, &lv_font_montserrat_24, 0);
-        lv_obj_set_style_text_color(lbl_name, UITheme::POS_MODAL, 0);
-        lv_obj_align(lbl_name, LV_ALIGN_TOP_LEFT, 0, 0);
+        // WCS code label (large, yellow)
+        lv_obj_t *lbl_wcs_code = lv_label_create(btn);
+        lv_label_set_text(lbl_wcs_code, wcs_names[i]);
+        lv_obj_set_style_text_font(lbl_wcs_code, &lv_font_montserrat_24, 0);
+        lv_obj_set_style_text_color(lbl_wcs_code, UITheme::POS_MODAL, 0);
+        lv_obj_align(lbl_wcs_code, LV_ALIGN_TOP_LEFT, 0, 0);
+        
+        // Custom name label (if exists) - orange color, to the right of WCS code
+        if (wcs_custom_names[i][0] != '\0') {
+            lv_obj_t *lbl_custom = lv_label_create(btn);
+            lv_label_set_text(lbl_custom, wcs_custom_names[i]);
+            lv_obj_set_style_text_font(lbl_custom, &lv_font_montserrat_20, 0);
+            lv_obj_set_style_text_color(lbl_custom, UITheme::POS_WORK, 0);
+            lv_label_set_long_mode(lbl_custom, LV_LABEL_LONG_DOT);
+            lv_obj_set_width(lbl_custom, wcs_locked[i] ? 215 : 245);  // Leave room for lock icon if present
+            lv_obj_align(lbl_custom, LV_ALIGN_TOP_LEFT, 70, 3);  // To the right of WCS code, slight vertical adjustment
+        }
+        
+        // Lock icon (bottom right) if locked
+        if (wcs_locked[i]) {
+            lv_obj_t *lbl_lock = lv_label_create(btn);
+            lv_label_set_text(lbl_lock, FA_ICON_LOCK);
+            lv_obj_set_style_text_font(lbl_lock, &fontawesome_icons_20, 0);
+            lv_obj_set_style_text_color(lbl_lock, UITheme::ACCENT_SECONDARY, 0);
+            lv_obj_align(lbl_lock, LV_ALIGN_BOTTOM_RIGHT, 0, -18);
+        }
         
         // Coordinates label with axis colors (axis labels AND values colored)
         lv_obj_t *lbl_coords = lv_label_create(btn);
@@ -1366,12 +1402,13 @@ void UITabStatus::onWCSSelected(lv_event_t *e) {
             lv_obj_set_style_border_color(wcs_buttons[selected_wcs_index], UITheme::ACCENT_SECONDARY, LV_PART_MAIN);
             lv_obj_set_style_border_width(wcs_buttons[selected_wcs_index], 2, LV_PART_MAIN);
         } else {
-            // Otherwise, remove border completely
-            lv_obj_set_style_border_width(wcs_buttons[selected_wcs_index], 0, LV_PART_MAIN);
+            // Otherwise, restore transparent 2px border (matches background)
+            lv_obj_set_style_border_color(wcs_buttons[selected_wcs_index], UITheme::BG_BUTTON, LV_PART_MAIN);
+            lv_obj_set_style_border_width(wcs_buttons[selected_wcs_index], 2, LV_PART_MAIN);
         }
     }
     
-    // Highlight new selection
+    // Highlight new selection with blue 3px border
     selected_wcs_index = index;
     lv_obj_set_style_border_color(btn, UITheme::ACCENT_PRIMARY, LV_PART_MAIN);
     lv_obj_set_style_border_width(btn, 3, LV_PART_MAIN);

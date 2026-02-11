@@ -1,6 +1,6 @@
 {
-  "name": "FluidTouch (Basic)",
-  "version": "1.0.3",
+  "name": "FluidTouch (Advance v1.3)",
+  "version": "1.0.3_advance-1.2-support",
   "new_install_prompt_erase": true,
   "funding_url": "https://github.com/jeyeager65/FluidTouch",
   "builds": [
@@ -8,22 +8,23 @@
       "chipFamily": "ESP32-S3",
       "parts": [
         {
-          "path": "basic/bootloader.bin",
+          "path": "advance-v1.3/bootloader.bin",
           "offset": 0
         },
         {
-          "path": "basic/partitions.bin",
+          "path": "advance-v1.3/partitions.bin",
           "offset": 32768
         },
         {
-          "path": "basic/boot_app0.bin",
+          "path": "advance-v1.3/boot_app0.bin",
           "offset": 57344
         },
         {
-          "path": "basic/firmware.bin",
+          "path": "advance-v1.3/firmware.bin",
           "offset": 65536
         }
       ]
     }
   ]
 }
+

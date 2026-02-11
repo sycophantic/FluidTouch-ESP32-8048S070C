@@ -40,6 +40,9 @@ public:
     static void hideAlarmPopup();
     static void checkStatePopups(int current_state, const char *last_message);  // Called from main loop
     
+    // WCS lock confirmation dialog
+    static void showWCSLockDialog(const char *wcs_code, const char *wcs_name, void (*continue_callback)(lv_event_t*));
+    
     // Getters for shared objects
     static lv_obj_t* getStatusBar() { return status_bar; }
     static lv_display_t* getDisplay() { return display; }

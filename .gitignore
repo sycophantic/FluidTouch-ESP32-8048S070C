@@ -52,6 +52,9 @@ __pycache__/
 .Python
 env/
 
+# Font generation cache
+scripts/fontawesome-cache/
+
 # Documentation images
 /docs/images/bmp/
 venv/
@@ -120,3 +123,14 @@ coverage.xml
 
 # Misc
 *.orig
+links.txt
+
+# Web installer build artifacts (local builds and previews)
+web/firmware/basic/
+web/firmware/advance-v1.3/
+web/firmware/advance-v1.2/
+web/firmware/preview/
+web/firmware/*/
+web/versions.json
+
+webui/

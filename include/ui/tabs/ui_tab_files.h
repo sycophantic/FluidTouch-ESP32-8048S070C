@@ -63,6 +63,7 @@ private:
     static void updateUploadProgress(size_t current, size_t total);
     static void closeUploadProgress(bool success, const char* error);
     static bool isDisplaySDAvailable();  // Check if Display SD card is available
+    static void navigateToUploadDirectory();  // Navigate to /fluidtouch/uploads on FluidNC SD
 };
 
 #endif // UI_TAB_FILES_H
