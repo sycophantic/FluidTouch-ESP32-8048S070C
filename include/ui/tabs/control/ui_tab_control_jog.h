@@ -21,6 +21,14 @@ private:
     static int xy_current_feed;
     static int z_current_feed;
 
+    // Step value arrays (parsed from settings) - max 5 values per axis
+    static float xy_step_values[5];
+    static float z_step_values[5];
+    static float a_step_values[5];
+    static int xy_step_count;
+    static int z_step_count;
+    static int a_step_count;
+
     // Z/A Toggle (only created if A-axis enabled)
     static lv_obj_t *btn_z_mode;         // Z button in segmented control
     static lv_obj_t *btn_a_mode;         // A button in segmented control
@@ -84,6 +92,15 @@ private:
     static void xy_jog_button_event_cb(lv_event_t *e);
     static void z_jog_button_event_cb(lv_event_t *e);
     static void cancel_jog_event_cb(lv_event_t *e);
+
+    // Step value parsing
+    static void parseStepValues();
+    
+    // Helper function to find closest step index
+    static int findClosestStepIndex(const float* step_values, int step_count, float target_value);
+    
+    // Helper function to format step values with minimal decimal places
+    static void formatStepValue(float value, char* buffer, size_t buffer_size);
 };
 
 #endif // UI_TAB_CONTROL_JOG_H

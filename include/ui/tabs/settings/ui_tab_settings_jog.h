@@ -25,6 +25,9 @@ public:
     static int getMaxXYFeed();
     static int getMaxZFeed();
     static int getMaxAFeed();
+    static const char* getXYSteps();
+    static const char* getZSteps();
+    static const char* getASteps();
     
     // Setters for updating values (used by event handlers)
     static void setDefaultXYStep(float value);
@@ -36,6 +39,9 @@ public:
     static void setMaxXYFeed(int value);
     static void setMaxZFeed(int value);
     static void setMaxAFeed(int value);
+    static void setXYSteps(const char* value);
+    static void setZSteps(const char* value);
+    static void setASteps(const char* value);
 
 private:
     // Default values
@@ -48,6 +54,9 @@ private:
     static int max_xy_feed;
     static int max_z_feed;
     static int max_a_feed;
+    static char xy_steps[64];
+    static char z_steps[64];
+    static char a_steps[64];
     
     // Keyboard
     static lv_obj_t *keyboard;

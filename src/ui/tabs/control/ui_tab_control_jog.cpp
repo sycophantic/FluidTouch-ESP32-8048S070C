@@ -45,6 +45,14 @@ float UITabControlJog::a_current_step = 1.0f;
 int UITabControlJog::a_current_step_index = 1;
 int UITabControlJog::a_current_feed = 1000;
 
+// Step value arrays (parsed from settings) - max 5 values per axis
+float UITabControlJog::xy_step_values[5] = {};
+float UITabControlJog::z_step_values[5] = {};
+float UITabControlJog::a_step_values[5] = {};
+int UITabControlJog::xy_step_count = 0;
+int UITabControlJog::z_step_count = 0;
+int UITabControlJog::a_step_count = 0;
+
 // Z control references (for visibility toggle)
 lv_obj_t *UITabControlJog::z_step_label = nullptr;
 lv_obj_t *UITabControlJog::z_feed_label = nullptr;
@@ -60,42 +68,24 @@ lv_obj_t *UITabControlJog::btn_z_plus1000 = nullptr;
 void UITabControlJog::create(lv_obj_t *tab) {
     // Load default values from settings
     UITabSettingsJog::loadPreferences();
+    
+    // Parse step values from comma-separated strings
+    parseStepValues();
+    
     xy_current_step = UITabSettingsJog::getDefaultXYStep();
     z_current_step = UITabSettingsJog::getDefaultZStep();
     xy_current_feed = UITabSettingsJog::getDefaultXYFeed();
     z_current_feed = UITabSettingsJog::getDefaultZFeed();
     
-    // Find closest XY step index
-    xy_current_step_index = 2;  // Default to 10mm
-    for (int i = 0; i < UITheme::XY_STEP_COUNT; i++) {
-        if (fabs(UITheme::XY_STEP_VALUES[i] - xy_current_step) < 0.01f) {
-            xy_current_step_index = i;
-            break;
-        }
-    }
-    
-    // Find closest Z step index
-    z_current_step_index = 1;  // Default to 1mm
-    for (int i = 0; i < UITheme::Z_STEP_COUNT; i++) {
-        if (fabs(UITheme::Z_STEP_VALUES[i] - z_current_step) < 0.01f) {
-            z_current_step_index = i;
-            break;
-        }
-    }
+    // Find closest step indices
+    xy_current_step_index = findClosestStepIndex(xy_step_values, xy_step_count, xy_current_step);
+    z_current_step_index = findClosestStepIndex(z_step_values, z_step_count, z_current_step);
 
     // Load A-axis defaults if enabled
     if (UICommon::isAAxisEnabled()) {
         a_current_step = UITabSettingsJog::getDefaultAStep();
         a_current_feed = UITabSettingsJog::getDefaultAFeed();
-
-        // Find closest matching A step index
-        a_current_step_index = 1;  // Default to 1.0 (deg or mm)
-        for (int i = 0; i < UITheme::A_STEP_COUNT; i++) {
-            if (fabs(UITheme::A_STEP_VALUES[i] - a_current_step) < 0.01f) {
-                a_current_step_index = i;
-                break;
-            }
-        }
+        a_current_step_index = findClosestStepIndex(a_step_values, a_step_count, a_current_step);
     }
 
     // Calculate available height - Control tab content area is ~370px
@@ -116,7 +106,7 @@ void UITabControlJog::create(lv_obj_t *tab) {
     lv_obj_set_pos(xy_step_label, 5, 9);  // Moved down 4px total
     
     // XY Step size buttons - vertical (largest to smallest)
-    for (int i = 0; i < UITheme::XY_STEP_COUNT; i++) {
+    for (int i = 0; i < xy_step_count; i++) {
         lv_obj_t *btn_step = lv_button_create(tab);
         lv_obj_set_size(btn_step, 45, 45);
         lv_obj_set_pos(btn_step, 10, 30 + i * 50);
@@ -125,7 +115,9 @@ void UITabControlJog::create(lv_obj_t *tab) {
         xy_step_buttons[i] = btn_step;
         
         lv_obj_t *lbl = lv_label_create(btn_step);
-        lv_label_set_text(lbl, UITheme::XY_STEP_LABELS[i]);
+        char label_buf[12];
+        formatStepValue(xy_step_values[i], label_buf, sizeof(label_buf));
+        lv_label_set_text(lbl, label_buf);
         lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
         lv_obj_center(lbl);
     }
@@ -300,7 +292,7 @@ void UITabControlJog::create(lv_obj_t *tab) {
     lv_obj_set_pos(z_step_label, 395, 9);  // Moved down 4px total
     
     // Z Step size buttons - vertical (largest to smallest)
-    for (int i = 0; i < UITheme::Z_STEP_COUNT; i++) {
+    for (int i = 0; i < z_step_count; i++) {
         lv_obj_t *btn_step = lv_button_create(tab);
         lv_obj_set_size(btn_step, 45, 45);
         lv_obj_set_pos(btn_step, 395, 30 + i * 50);
@@ -309,7 +301,9 @@ void UITabControlJog::create(lv_obj_t *tab) {
         z_step_buttons[i] = btn_step;
         
         lv_obj_t *lbl = lv_label_create(btn_step);
-        lv_label_set_text(lbl, UITheme::Z_STEP_LABELS[i]);
+        char label_buf[12];
+        formatStepValue(z_step_values[i], label_buf, sizeof(label_buf));
+        lv_label_set_text(lbl, label_buf);
         lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
         lv_obj_center(lbl);
     }
@@ -441,7 +435,7 @@ void UITabControlJog::create(lv_obj_t *tab) {
         lv_obj_add_flag(a_step_label, LV_OBJ_FLAG_HIDDEN);  // Hidden by default
 
         // A Step size selection - VERTICAL buttons (same positions as Z)
-        for (int i = 0; i < UITheme::A_STEP_COUNT; i++) {
+        for (int i = 0; i < a_step_count; i++) {
             lv_obj_t *btn_step = lv_button_create(tab);
             lv_obj_set_size(btn_step, 45, 45);
             lv_obj_set_pos(btn_step, 395, 30 + i * 50);
@@ -451,7 +445,9 @@ void UITabControlJog::create(lv_obj_t *tab) {
             a_step_buttons[i] = btn_step;
 
             lv_obj_t *lbl = lv_label_create(btn_step);
-            lv_label_set_text(lbl, UITheme::A_STEP_LABELS[i]);
+            char label_buf[12];
+            formatStepValue(a_step_values[i], label_buf, sizeof(label_buf));
+            lv_label_set_text(lbl, label_buf);
             lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
             lv_obj_center(lbl);
         }
@@ -569,7 +565,7 @@ void UITabControlJog::xy_step_button_event_cb(lv_event_t *e) {
     int index = (int)(intptr_t)lv_event_get_user_data(e);
     
     xy_current_step_index = index;
-    xy_current_step = UITheme::XY_STEP_VALUES[index];
+    xy_current_step = xy_step_values[index];
     update_xy_step_display();
     update_xy_step_button_styles();
     
@@ -581,7 +577,7 @@ void UITabControlJog::z_step_button_event_cb(lv_event_t *e) {
     int index = (int)(intptr_t)lv_event_get_user_data(e);
     
     z_current_step_index = index;
-    z_current_step = UITheme::Z_STEP_VALUES[index];
+    z_current_step = z_step_values[index];
     update_z_step_display();
     update_z_step_button_styles();
     
@@ -618,7 +614,7 @@ void UITabControlJog::update_z_step_display() {
 
 // Update XY button styles to highlight the selected step
 void UITabControlJog::update_xy_step_button_styles() {
-    for (int i = 0; i < UITheme::XY_STEP_COUNT; i++) {
+    for (int i = 0; i < xy_step_count; i++) {
         if (xy_step_buttons[i] != nullptr) {
             if (i == xy_current_step_index) {
                 lv_obj_set_style_bg_color(xy_step_buttons[i], UITheme::ACCENT_PRIMARY, (lv_state_t)(LV_PART_MAIN | LV_STATE_DEFAULT));
@@ -633,7 +629,7 @@ void UITabControlJog::update_xy_step_button_styles() {
 
 // Update Z button styles to highlight the selected step
 void UITabControlJog::update_z_step_button_styles() {
-    for (int i = 0; i < UITheme::Z_STEP_COUNT; i++) {
+    for (int i = 0; i < z_step_count; i++) {
         if (z_step_buttons[i] != nullptr) {
             if (i == z_current_step_index) {
                 lv_obj_set_style_bg_color(z_step_buttons[i], UITheme::ACCENT_PRIMARY, (lv_state_t)(LV_PART_MAIN | LV_STATE_DEFAULT));
@@ -905,7 +901,7 @@ void UITabControlJog::za_toggle_event_cb(lv_event_t *e) {
 
         // Show Z controls
         lv_obj_clear_flag(z_step_label, LV_OBJ_FLAG_HIDDEN);
-        for (int i = 0; i < UITheme::Z_STEP_COUNT; i++) {
+        for (int i = 0; i < z_step_count; i++) {
             lv_obj_clear_flag(z_step_buttons[i], LV_OBJ_FLAG_HIDDEN);
         }
         lv_obj_clear_flag(btn_z_up, LV_OBJ_FLAG_HIDDEN);
@@ -921,7 +917,7 @@ void UITabControlJog::za_toggle_event_cb(lv_event_t *e) {
 
         // Hide A controls
         if (a_step_label != nullptr) lv_obj_add_flag(a_step_label, LV_OBJ_FLAG_HIDDEN);
-        for (int i = 0; i < UITheme::A_STEP_COUNT; i++) {
+        for (int i = 0; i < a_step_count; i++) {
             if (a_step_buttons[i] != nullptr) {
                 lv_obj_add_flag(a_step_buttons[i], LV_OBJ_FLAG_HIDDEN);
             }
@@ -943,7 +939,7 @@ void UITabControlJog::za_toggle_event_cb(lv_event_t *e) {
 
         // Hide Z controls
         lv_obj_add_flag(z_step_label, LV_OBJ_FLAG_HIDDEN);
-        for (int i = 0; i < UITheme::Z_STEP_COUNT; i++) {
+        for (int i = 0; i < z_step_count; i++) {
             lv_obj_add_flag(z_step_buttons[i], LV_OBJ_FLAG_HIDDEN);
         }
         lv_obj_add_flag(btn_z_up, LV_OBJ_FLAG_HIDDEN);
@@ -959,7 +955,7 @@ void UITabControlJog::za_toggle_event_cb(lv_event_t *e) {
 
         // Show A controls
         if (a_step_label != nullptr) lv_obj_clear_flag(a_step_label, LV_OBJ_FLAG_HIDDEN);
-        for (int i = 0; i < UITheme::A_STEP_COUNT; i++) {
+        for (int i = 0; i < a_step_count; i++) {
             if (a_step_buttons[i] != nullptr) {
                 lv_obj_clear_flag(a_step_buttons[i], LV_OBJ_FLAG_HIDDEN);
             }
@@ -988,7 +984,7 @@ void UITabControlJog::a_step_button_event_cb(lv_event_t *e) {
     int index = (int)(intptr_t)lv_event_get_user_data(e);
 
     a_current_step_index = index;
-    a_current_step = UITheme::A_STEP_VALUES[index];
+    a_current_step = a_step_values[index];
 
     update_a_step_display();
     update_a_step_button_styles();
@@ -1050,7 +1046,7 @@ void UITabControlJog::a_feedrate_adj_event_cb(lv_event_t *e) {
 
 // A-axis update functions
 void UITabControlJog::update_a_step_button_styles() {
-    for (int i = 0; i < UITheme::A_STEP_COUNT; i++) {
+    for (int i = 0; i < a_step_count; i++) {
         if (a_step_buttons[i] != nullptr) {
             if (i == a_current_step_index) {
                 lv_obj_set_style_bg_color(a_step_buttons[i], UITheme::ACCENT_PRIMARY, (lv_state_t)(LV_PART_MAIN | LV_STATE_DEFAULT));
@@ -1078,3 +1074,89 @@ void UITabControlJog::update_a_step_display() {
 
     lv_label_set_text(a_step_display_label, buf);
 }
+
+// Parse comma-separated step values from settings
+void UITabControlJog::parseStepValues() {
+    // Parse XY step values
+    const char* xy_steps_str = UITabSettingsJog::getXYSteps();
+    xy_step_count = 0;
+    char xy_buffer[64];
+    strncpy(xy_buffer, xy_steps_str, sizeof(xy_buffer) - 1);
+    xy_buffer[sizeof(xy_buffer) - 1] = '\0';
+    
+    char* token = strtok(xy_buffer, ",");
+    while (token != nullptr && xy_step_count < 5) {
+        xy_step_values[xy_step_count++] = atof(token);
+        token = strtok(nullptr, ",");
+    }
+    
+    // Parse Z step values
+    const char* z_steps_str = UITabSettingsJog::getZSteps();
+    z_step_count = 0;
+    char z_buffer[64];
+    strncpy(z_buffer, z_steps_str, sizeof(z_buffer) - 1);
+    z_buffer[sizeof(z_buffer) - 1] = '\0';
+    
+    token = strtok(z_buffer, ",");
+    while (token != nullptr && z_step_count < 5) {
+        z_step_values[z_step_count++] = atof(token);
+        token = strtok(nullptr, ",");
+    }
+    
+    // Parse A step values (if A-axis is enabled)
+    if (UICommon::isAAxisEnabled()) {
+        const char* a_steps_str = UITabSettingsJog::getASteps();
+        a_step_count = 0;
+        char a_buffer[64];
+        strncpy(a_buffer, a_steps_str, sizeof(a_buffer) - 1);
+        a_buffer[sizeof(a_buffer) - 1] = '\0';
+        
+        token = strtok(a_buffer, ",");
+        while (token != nullptr && a_step_count < 5) {
+            a_step_values[a_step_count++] = atof(token);
+            token = strtok(nullptr, ",");
+        }
+    }
+    
+    Serial.printf("Parsed step values:\n");
+    Serial.printf("  XY (%d): ", xy_step_count);
+    for (int i = 0; i < xy_step_count; i++) Serial.printf("%g ", xy_step_values[i]);
+    Serial.printf("\n  Z (%d): ", z_step_count);
+    for (int i = 0; i < z_step_count; i++) Serial.printf("%g ", z_step_values[i]);
+    if (UICommon::isAAxisEnabled()) {
+        Serial.printf("\n  A (%d): ", a_step_count);
+        for (int i = 0; i < a_step_count; i++) Serial.printf("%g ", a_step_values[i]);
+    }
+    Serial.printf("\n");
+}
+
+// Helper function to find the index of the closest step value to a target
+int UITabControlJog::findClosestStepIndex(const float* step_values, int step_count, float target_value) {
+    if (step_count == 0) return 0;
+    
+    int closest_index = 0;
+    float min_diff = fabs(step_values[0] - target_value);
+    
+    for (int i = 1; i < step_count; i++) {
+        float diff = fabs(step_values[i] - target_value);
+        if (diff < min_diff) {
+            min_diff = diff;
+            closest_index = i;
+        }
+    }
+    
+    return closest_index;
+}
+
+// Helper function to format step values with minimal decimal places
+// Examples: 10 -> "10", 1 -> "1", 0.1 -> "0.1", 123.45 -> "123.45"
+void UITabControlJog::formatStepValue(float value, char* buffer, size_t buffer_size) {
+    if (fmod(value, 1.0f) == 0.0f) {
+        // Whole number - no decimal point
+        snprintf(buffer, buffer_size, "%.0f", value);
+    } else {
+        // Has fractional part - use minimal precision (%g removes trailing zeros)
+        snprintf(buffer, buffer_size, "%g", value);
+    }
+}
+

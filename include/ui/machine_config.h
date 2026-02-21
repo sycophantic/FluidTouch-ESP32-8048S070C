@@ -29,6 +29,9 @@ struct MachineConfig {
     int jog_max_xy_feed;     // Max XY feed for joystick (mm/min)
     int jog_max_z_feed;      // Max Z feed for joystick (mm/min)
     int jog_max_a_feed;      // Max A feed for joystick (mm/min or deg/min)
+    char jog_xy_steps[64];   // XY step values (comma-separated, e.g., "100,50,10,1,0.1")
+    char jog_z_steps[64];    // Z step values (comma-separated)
+    char jog_a_steps[64];    // A step values (comma-separated)
     
     // Probe control defaults
     int probe_feed_rate;     // Default probe feed rate (mm/min)
@@ -47,6 +50,9 @@ struct MachineConfig {
         ssid[0] = '\0';
         password[0] = '\0';
         fluidnc_url[0] = '\0';
+        strcpy(jog_xy_steps, "100,50,10,1,0.1");
+        strcpy(jog_z_steps, "50,25,10,1,0.1");
+        strcpy(jog_a_steps, "50,25,10,1,0.1");
     }
 };
 
