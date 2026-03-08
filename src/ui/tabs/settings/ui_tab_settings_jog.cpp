@@ -574,16 +574,16 @@ static void btn_save_jog_event_handler(lv_event_t *e) {
         // Read values from text areas
         const char *xy_step_text = lv_textarea_get_text(ta_xy_step);
         const char *z_step_text = lv_textarea_get_text(ta_z_step);
-        const char *a_step_text = lv_textarea_get_text(ta_a_step);
+        const char *a_step_text = ta_a_step ? lv_textarea_get_text(ta_a_step) : "1";
         const char *xy_feed_text = lv_textarea_get_text(ta_xy_feed);
         const char *z_feed_text = lv_textarea_get_text(ta_z_feed);
-        const char *a_feed_text = lv_textarea_get_text(ta_a_feed);
+        const char *a_feed_text = ta_a_feed ? lv_textarea_get_text(ta_a_feed) : "1000";
         const char *max_xy_feed_text = lv_textarea_get_text(ta_max_xy_feed);
         const char *max_z_feed_text = lv_textarea_get_text(ta_max_z_feed);
-        const char *max_a_feed_text = lv_textarea_get_text(ta_max_a_feed);
+        const char *max_a_feed_text = ta_max_a_feed ? lv_textarea_get_text(ta_max_a_feed) : "3000";
         const char *xy_steps_text = lv_textarea_get_text(ta_xy_steps);
         const char *z_steps_text = lv_textarea_get_text(ta_z_steps);
-        const char *a_steps_text = lv_textarea_get_text(ta_a_steps);
+        const char *a_steps_text = ta_a_steps ? lv_textarea_get_text(ta_a_steps) : "1,10,50";
 
         // Validate and update
         float xy_step_val = atof(xy_step_text);
@@ -682,13 +682,13 @@ static void btn_reset_event_handler(lv_event_t *e) {
         // Reset to hardcoded defaults
         lv_textarea_set_text(ta_xy_step, "10.0");
         lv_textarea_set_text(ta_z_step, "1.0");
-        lv_textarea_set_text(ta_a_step, "1.0");
+        if (ta_a_step) lv_textarea_set_text(ta_a_step, "1.0");
         lv_textarea_set_text(ta_xy_feed, "3000");
         lv_textarea_set_text(ta_z_feed, "1000");
-        lv_textarea_set_text(ta_a_feed, "1000");
+        if (ta_a_feed) lv_textarea_set_text(ta_a_feed, "1000");
         lv_textarea_set_text(ta_max_xy_feed, "8000");
         lv_textarea_set_text(ta_max_z_feed, "3000");
-        lv_textarea_set_text(ta_max_a_feed, "3000");
+        if (ta_max_a_feed) lv_textarea_set_text(ta_max_a_feed, "3000");
         
         if (status_label != nullptr) {
             lv_label_set_text(status_label, "Reset to defaults (not saved)");

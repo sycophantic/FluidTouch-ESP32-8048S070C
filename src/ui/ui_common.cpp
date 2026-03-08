@@ -23,7 +23,9 @@ lv_obj_t *UICommon::machine_select_dialog = nullptr;
 lv_obj_t *UICommon::connecting_popup = nullptr;
 lv_obj_t *UICommon::connection_error_dialog = nullptr;
 lv_obj_t *UICommon::hold_popup = nullptr;
+lv_obj_t *UICommon::hold_popup_msg_label = nullptr;
 lv_obj_t *UICommon::alarm_popup = nullptr;
+lv_obj_t *UICommon::alarm_popup_msg_label = nullptr;
 int UICommon::last_popup_state = -1;
 bool UICommon::hold_popup_dismissed = false;
 bool UICommon::alarm_popup_dismissed = false;
@@ -1245,13 +1247,13 @@ void UICommon::showHoldPopup(const char *message) {
     lv_obj_align(state_label, LV_ALIGN_TOP_MID, 0, 0);
     
     // Message label
-    lv_obj_t *msg_label = lv_label_create(dialog);
-    lv_label_set_text(msg_label, message && strlen(message) > 0 ? message : "Machine paused");
-    lv_obj_set_style_text_font(msg_label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(msg_label, UITheme::TEXT_LIGHT, 0);
-    lv_obj_set_width(msg_label, 520);
-    lv_label_set_long_mode(msg_label, LV_LABEL_LONG_WRAP);
-    lv_obj_align(msg_label, LV_ALIGN_TOP_MID, 0, 60);
+    hold_popup_msg_label = lv_label_create(dialog);
+    lv_label_set_text(hold_popup_msg_label, message && strlen(message) > 0 ? message : "Machine paused");
+    lv_obj_set_style_text_font(hold_popup_msg_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(hold_popup_msg_label, UITheme::TEXT_LIGHT, 0);
+    lv_obj_set_width(hold_popup_msg_label, 520);
+    lv_label_set_long_mode(hold_popup_msg_label, LV_LABEL_LONG_WRAP);
+    lv_obj_align(hold_popup_msg_label, LV_ALIGN_TOP_MID, 0, 60);
     
     // Button container
     lv_obj_t *btn_container = lv_obj_create(dialog);
@@ -1269,6 +1271,9 @@ void UICommon::showHoldPopup(const char *message) {
     lv_obj_set_style_bg_color(resume_btn, UITheme::BTN_PLAY, 0);
     lv_obj_add_event_cb(resume_btn, [](lv_event_t *e) {
         FluidNCClient::sendCommand("~"); // Send cycle start (resume)
+        // Clear the last message so it doesn't persist after resuming
+        FluidNCClient::clearLastMessage();
+        if (hold_popup_msg_label) lv_label_set_text(hold_popup_msg_label, "");
     }, LV_EVENT_CLICKED, nullptr);
     
     lv_obj_t *resume_label = lv_label_create(resume_btn);
@@ -1297,6 +1302,7 @@ void UICommon::hideHoldPopup() {
     if (hold_popup) {
         lv_obj_del(hold_popup);
         hold_popup = nullptr;
+        hold_popup_msg_label = nullptr;
         Serial.println("UICommon: HOLD popup hidden");
     }
 }
@@ -1332,13 +1338,13 @@ void UICommon::showAlarmPopup(const char *message) {
     lv_obj_align(state_label, LV_ALIGN_TOP_MID, 0, 0);
     
     // Message label
-    lv_obj_t *msg_label = lv_label_create(dialog);
-    lv_label_set_text(msg_label, message && strlen(message) > 0 ? message : "Alarm condition detected");
-    lv_obj_set_style_text_font(msg_label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(msg_label, UITheme::TEXT_LIGHT, 0);
-    lv_obj_set_width(msg_label, 520);
-    lv_label_set_long_mode(msg_label, LV_LABEL_LONG_WRAP);
-    lv_obj_align(msg_label, LV_ALIGN_TOP_MID, 0, 60);
+    alarm_popup_msg_label = lv_label_create(dialog);
+    lv_label_set_text(alarm_popup_msg_label, message && strlen(message) > 0 ? message : "Alarm condition detected");
+    lv_obj_set_style_text_font(alarm_popup_msg_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(alarm_popup_msg_label, UITheme::TEXT_LIGHT, 0);
+    lv_obj_set_width(alarm_popup_msg_label, 520);
+    lv_label_set_long_mode(alarm_popup_msg_label, LV_LABEL_LONG_WRAP);
+    lv_obj_align(alarm_popup_msg_label, LV_ALIGN_TOP_MID, 0, 60);
     
     // Button container
     lv_obj_t *btn_container = lv_obj_create(dialog);
@@ -1359,6 +1365,9 @@ void UICommon::showAlarmPopup(const char *message) {
         FluidNCClient::sendCommand("\x18"); // Ctrl-X (soft reset)
         delay(100);
         FluidNCClient::sendCommand("$X\n");   // Unlock
+        // Clear the last message so it doesn't persist after clearing the alarm
+        FluidNCClient::clearLastMessage();
+        if (alarm_popup_msg_label) lv_label_set_text(alarm_popup_msg_label, "");
     }, LV_EVENT_CLICKED, nullptr);
     
     lv_obj_t *clear_label = lv_label_create(clear_btn);
@@ -1387,6 +1396,7 @@ void UICommon::hideAlarmPopup() {
     if (alarm_popup) {
         lv_obj_del(alarm_popup);
         alarm_popup = nullptr;
+        alarm_popup_msg_label = nullptr;
         Serial.println("UICommon: ALARM popup hidden");
     }
 }
@@ -1409,10 +1419,18 @@ void UICommon::checkStatePopups(int current_state, const char *last_message) {
     }
     
     // Show appropriate popup for current state (only if not dismissed)
-    if (current_state == STATE_HOLD && !hold_popup && !hold_popup_dismissed) {
-        showHoldPopup(last_message);
-    } else if (current_state == STATE_ALARM && !alarm_popup && !alarm_popup_dismissed) {
-        showAlarmPopup(last_message);
+    if (current_state == STATE_HOLD && !hold_popup_dismissed) {
+        if (!hold_popup) {
+            showHoldPopup(last_message);
+        } else if (hold_popup_msg_label && last_message) {
+            lv_label_set_text(hold_popup_msg_label, last_message);
+        }
+    } else if (current_state == STATE_ALARM && !alarm_popup_dismissed) {
+        if (!alarm_popup) {
+            showAlarmPopup(last_message);
+        } else if (alarm_popup_msg_label && last_message) {
+            lv_label_set_text(alarm_popup_msg_label, last_message);
+        }
     }
     
     // Update last state
