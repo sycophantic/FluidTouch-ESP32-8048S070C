@@ -117,6 +117,9 @@ public:
     // Send a command to FluidNC (e.g., "G0 X10", "$H", "!")
     static void sendCommand(const char* command);
     
+    // Clear the stored last message
+    static void clearLastMessage();
+    
     // Request status report (sends "?")
     static void requestStatusReport();
     

@@ -63,7 +63,9 @@ private:
     static lv_obj_t *connecting_popup;       // Connecting popup
     static lv_obj_t *connection_error_dialog; // Connection error dialog
     static lv_obj_t *hold_popup;             // HOLD state popup
+    static lv_obj_t *hold_popup_msg_label;   // Message label inside HOLD popup (for live updates)
     static lv_obj_t *alarm_popup;            // ALARM state popup
+    static lv_obj_t *alarm_popup_msg_label;  // Message label inside ALARM popup (for live updates)
     static int last_popup_state;             // Track last state to detect changes
     static bool hold_popup_dismissed;        // User dismissed HOLD popup
     static bool alarm_popup_dismissed;       // User dismissed ALARM popup

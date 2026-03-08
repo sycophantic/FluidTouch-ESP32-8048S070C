@@ -172,6 +172,10 @@ const FluidNCStatus& FluidNCClient::getStatus() {
     return currentStatus;
 }
 
+void FluidNCClient::clearLastMessage() {
+    currentStatus.last_message[0] = '\0';
+}
+
 void FluidNCClient::sendCommand(const char* command) {
     if (!currentStatus.is_connected) {
         Serial.println("[FluidNC] Error: Not connected");
@@ -266,6 +270,10 @@ void FluidNCClient::onMessageCallback(WebsocketsMessage message) {
     } else if (payload[0] == '[') {
         // Other realtime feedback: [MSG:...], [G92:...], etc.
         parseRealtimeFeedback(payload);
+    } else if (strncmp(payload, "error:", 6) == 0 || strncmp(payload, "ALARM:", 6) == 0) {
+        // Plain-text error/alarm lines, e.g. "error:9" or "ALARM:2"
+        strncpy(currentStatus.last_message, payload, sizeof(currentStatus.last_message) - 1);
+        currentStatus.last_message[sizeof(currentStatus.last_message) - 1] = '\0';
     }
 }
 
@@ -552,23 +560,42 @@ void FluidNCClient::parseRealtimeFeedback(const char* message) {
         }
     }
     
-    // Extract message content from [MSG:...] format
-    if (strncmp(message, "[MSG:", 5) == 0) {
-        // Find the closing bracket
+    // Update last_message for [MSG:INFO...], [MSG:WARN...] and [MSG:ERR...] messages
+    if (strncmp(message, "[MSG:INFO", 9) == 0 ||
+        strncmp(message, "[MSG:WARN", 9) == 0 ||
+        strncmp(message, "[MSG:ERR",  8) == 0) {
         const char* end = strchr(message, ']');
         if (end) {
-            // Copy message content (skip "[MSG:" and "]")
-            size_t len = end - (message + 5);
+            // Skip past "[MSG:LEVEL:" by finding the second colon
+            const char* first_colon = strchr(message + 1, ':');
+            const char* content = first_colon ? strchr(first_colon + 1, ':') : nullptr;
+            if (content && content < end) {
+                content++;  // skip the colon after the level tag
+            } else {
+                content = end;  // nothing to extract
+            }
+
+            // Trim leading spaces
+            while (*content == ' ' && content < end) content++;
+
+            // Strip "MSG" prefix + one extra character, then trim spaces
+            if (content + 3 < end && strncmp(content, "MSG", 3) == 0) {
+                content += 4;
+                while (*content == ' ' && content < end) content++;
+            }
+            // Strip "PRINT" prefix + one extra character, then trim spaces
+            else if (content + 5 < end && strncmp(content, "PRINT", 5) == 0) {
+                content += 6;
+                while (*content == ' ' && content < end) content++;
+            }
+
+            size_t len = (content < end) ? (size_t)(end - content) : 0;
             if (len >= sizeof(currentStatus.last_message)) {
                 len = sizeof(currentStatus.last_message) - 1;
             }
-            strncpy(currentStatus.last_message, message + 5, len);
+            strncpy(currentStatus.last_message, content, len);
             currentStatus.last_message[len] = '\0';
         }
-    } else {
-        // For other feedback messages, store the whole thing
-        strncpy(currentStatus.last_message, message, sizeof(currentStatus.last_message) - 1);
-        currentStatus.last_message[sizeof(currentStatus.last_message) - 1] = '\0';
     }
 }
 
