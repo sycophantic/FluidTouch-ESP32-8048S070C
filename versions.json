@@ -1,0 +1,22 @@
+{
+  "default_version": "1.0.4",
+  "default_hardware": "advance-v1.3",
+  "versions": [
+    {
+      "id": "1.0.4",
+      "hardware": [
+        "basic",
+        "advance-v1.3",
+        "advance-v1.2",
+        "esp32-8048s070c"
+      ],
+      "is_preview": false
+    }
+  ],
+  "hardware_info": {
+    "basic": "Basic",
+    "advance-v1.3": "Advance v1.3",
+    "advance-v1.2": "Advance v1.2",
+    "esp32-8048s070c": "ESP32-8048S070C ESP32-8048S070"
+  }
+}
